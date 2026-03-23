@@ -81,7 +81,7 @@ export async function registerRoutes(
       }
 
       const response = await openai.responses.create({
-        model: "gpt5_mini",
+        model: "gpt-4o-mini",
         instructions: QUESTIONS_SYSTEM,
         input: `Raw prompt: "${prompt.trim()}"`,
       });
@@ -126,7 +126,7 @@ export async function registerRoutes(
       const input = `Raw prompt: "${prompt.trim()}"${answersBlock}`;
 
       const response = await openai.responses.create({
-        model: "gpt5_mini",
+        model: "gpt-4o-mini",
         instructions: CLEANUP_SYSTEM,
         input,
       });
