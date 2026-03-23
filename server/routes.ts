@@ -1,9 +1,19 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import OpenAI from "openai";
+import Stripe from "stripe";
 
 const openai = new OpenAI();
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2026-02-25.clover",
+});
+
+const PRICE_ID = process.env.STRIPE_PRICE_ID!;
+const FREE_RUN_LIMIT = 3;
+
+const usageMap: Record<string, number> = {};
 
 // ── Prompt 1: Generate clarifying questions ───────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
@@ -72,8 +82,89 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // ── Paywall: usage-limit middleware ────────────────────────────────────────
+  function requireUnderLimit(req: Request, res: Response, next: NextFunction) {
+    if (req.cookies?.paid === "true") {
+      return next();
+    }
+    const userId: string = (req.cookies?.userId as string) || (req.ip ?? "anonymous");
+    const uses = usageMap[userId] ?? 0;
+    if (uses >= FREE_RUN_LIMIT) {
+      return res.status(402).json({
+        message: "Free limit reached. Please upgrade to continue.",
+        limitReached: true,
+      });
+    }
+    usageMap[userId] = uses + 1;
+    return next();
+  }
+
+  // ── Stripe: create checkout session ───────────────────────────────────────
+  app.post("/api/checkout", async (req, res) => {
+    try {
+      const origin =
+        process.env.CLIENT_URL ||
+        `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [{ price: PRICE_ID, quantity: 1 }],
+        mode: "payment",
+        success_url: `${origin}/api/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}`,
+      });
+      return res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Checkout error:", error);
+      return res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  // ── Stripe: verify payment and set paid cookie ─────────────────────────────
+  app.get("/api/payment-success", async (req, res) => {
+    const sessionId = req.query.session_id as string;
+    if (!sessionId) return res.redirect("/");
+    try {
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status === "paid") {
+        res.cookie("paid", "true", {
+          httpOnly: false,
+          maxAge: 365 * 24 * 60 * 60 * 1000,
+          sameSite: "lax",
+        });
+      }
+    } catch (error: any) {
+      console.error("Payment verification error:", error);
+    }
+    return res.redirect("/");
+  });
+
+  // ── Stripe: webhook ────────────────────────────────────────────────────────
+  app.post("/api/webhook", async (req, res) => {
+    const sig = req.headers["stripe-signature"] as string;
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      return res.status(500).json({ message: "Webhook secret not configured" });
+    }
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.rawBody as Buffer,
+        sig,
+        webhookSecret
+      );
+    } catch (err: any) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      console.log("Payment completed for session:", session.id);
+    }
+    return res.json({ received: true });
+  });
+
   // ── Step 1: Generate questions ─────────────────────────────────────────────
-  app.post("/api/questions", async (req, res) => {
+  app.post("/api/questions", requireUnderLimit, async (req, res) => {
     try {
       const { prompt } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
@@ -108,7 +199,7 @@ export async function registerRoutes(
   });
 
   // ── Step 2: Full cleanup with answers ─────────────────────────────────────
-  app.post("/api/cleanup", async (req, res) => {
+  app.post("/api/cleanup", requireUnderLimit, async (req, res) => {
     try {
       const { prompt, answers } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
