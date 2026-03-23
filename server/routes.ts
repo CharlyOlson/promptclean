@@ -184,6 +184,11 @@ export async function registerRoutes(
     }
   });
 
+  // ── Health check ───────────────────────────────────────────────────────────
+  app.get("/api/health", (_req, res) => {
+    return res.json({ ok: true, openai: !!process.env.OPENAI_API_KEY });
+  });
+
   // ── History ────────────────────────────────────────────────────────────────
   app.get("/api/history", async (_req, res) => {
     try {
