@@ -28,9 +28,10 @@ Sin — in the philosophical sense from the source doc — lives in stages 2 and
 npm install
 ```
 
-Create a `.env` file:
-```
-OPENAI_API_KEY=your_key_here
+Copy the example env file and add your key:
+```bash
+cp .env.example .env
+# then open .env and replace sk-... with your real key
 ```
 
 Run dev:
@@ -56,6 +57,21 @@ npm run build
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
 | `NODE_ENV` | No | Set to `production` for prod builds |
+
+## Rotating your API key
+
+If your key was exposed or you need to replace it:
+
+**Locally**
+1. Open (or create) `.env` in the project root — it is gitignored, so safe to edit.
+2. Replace the value of `OPENAI_API_KEY` with the new key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+3. Restart `npm run dev` — the server picks up the new value on boot.
+
+**Railway (production)**
+1. Open your project in the [Railway dashboard](https://railway.app).
+2. Go to **Variables** (left sidebar).
+3. Find `OPENAI_API_KEY`, click the pencil icon, paste the new key, and save.
+4. Railway will trigger a redeploy automatically.
 
 ---
 
