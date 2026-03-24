@@ -1,9 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
-const openai = new OpenAI();
+// Gemini client — reads GEMINI_API_KEY from env by default
+const genAI = new GoogleGenAI({});
+const QUESTIONS_MODEL = "gemini-3-flash-preview";
+const CLEANUP_MODEL = "gemini-3-flash-preview";
 
 // ── Prompt 1: Generate clarifying questions ───────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
@@ -69,9 +72,8 @@ Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
 ): Promise<Server> {
-
   // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {
@@ -80,30 +82,35 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      const response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        instructions: QUESTIONS_SYSTEM,
-        input: `Raw prompt: "${prompt.trim()}"`,
+      const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
+
+      const response = await genAI.models.generateContent({
+        model: QUESTIONS_MODEL,
+        contents: input,
       });
 
-      const rawText = typeof response.output_text === "string"
-        ? response.output_text
-        : JSON.stringify(response.output_text);
-
-      const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const rawText = response.text ?? "";
+      const cleaned = rawText
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
+        .trim();
 
       let questions: any[];
       try {
         questions = JSON.parse(cleaned);
         if (!Array.isArray(questions)) throw new Error("not array");
       } catch {
-        return res.status(500).json({ message: "Failed to parse questions" });
+        return res
+          .status(500)
+          .json({ message: "Failed to parse questions" });
       }
 
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
-      return res.status(500).json({ message: error.message || "Internal server error" });
+      return res
+        .status(500)
+        .json({ message: error.message || "Internal server error" });
     }
   });
 
@@ -115,33 +122,39 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // Build the input with answers incorporated
-      const answersBlock = answers && typeof answers === "object" && Object.keys(answers).length > 0
-        ? "\n\nClarifying answers provided by the user:\n" +
-          Object.entries(answers)
-            .map(([qid, ans]) => `- ${qid}: ${ans}`)
-            .join("\n")
-        : "\n\nNo clarifying answers provided — rewrite with best general precision.";
+      const answersBlock =
+        answers &&
+        typeof answers === "object" &&
+        Object.keys(answers).length > 0
+          ? "\n\nClarifying answers provided by the user:\n" +
+            Object.entries(answers)
+              .map(([qid, ans]) => `- ${qid}: ${ans}`)
+              .join("\n")
+          : "\n\nNo clarifying answers provided — rewrite with best general precision.";
 
-      const input = `Raw prompt: "${prompt.trim()}"${answersBlock}`;
+      const input =
+        `${CLEANUP_SYSTEM}\n\n` +
+        `Raw prompt: "${prompt.trim()}"` +
+        answersBlock;
 
-      const response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        instructions: CLEANUP_SYSTEM,
-        input,
+      const response = await genAI.models.generateContent({
+        model: CLEANUP_MODEL,
+        contents: input,
       });
 
-      const rawText = typeof response.output_text === "string"
-        ? response.output_text
-        : JSON.stringify(response.output_text);
-
-      const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const rawText = response.text ?? "";
+      const cleaned = rawText
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
+        .trim();
 
       let parsed: any;
       try {
         parsed = JSON.parse(cleaned);
       } catch {
-        return res.status(500).json({ message: "Failed to parse AI response" });
+        return res
+          .status(500)
+          .json({ message: "Failed to parse AI response" });
       }
 
       const score = {
@@ -180,13 +193,15 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Cleanup error:", error);
-      return res.status(500).json({ message: error.message || "Internal server error" });
+      return res
+        .status(500)
+        .json({ message: error.message || "Internal server error" });
     }
   });
 
   // ── Health check ───────────────────────────────────────────────────────────
   app.get("/api/health", (_req, res) => {
-    return res.json({ ok: true, openai: !!process.env.OPENAI_API_KEY });
+    return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
   });
 
   // ── History ────────────────────────────────────────────────────────────────
@@ -196,7 +211,9 @@ export async function registerRoutes(
       return res.json(recent);
     } catch (error: any) {
       console.error("History error:", error);
-      return res.status(500).json({ message: error.message || "Internal server error" });
+      return res
+        .status(500)
+        .json({ message: error.message || "Internal server error" });
     }
   });
 
