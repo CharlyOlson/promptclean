@@ -69,9 +69,11 @@ Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 to
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
 async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
-  const result = await model.generateContent(
-    `${systemPrompt}\n\nUser input:\n${userInput}`
-  );
+  const modelWithSystem = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    systemInstruction: systemPrompt,
+  });
+  const result = await modelWithSystem.generateContent(userInput);
   return result.response.text();
 }
 
