@@ -3,8 +3,8 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 
-if (!process.env.OPENAI_API_KEY) {
-  console.error("ERROR: OPENAI_API_KEY is not set. Add it to your .env file (local) or Railway Variables (production) and restart.");
+if (!process.env.GEMINI_API_KEY) {
+  console.error("ERROR: GEMINI_API_KEY is not set. Add it to your .env file (local) or Railway Variables (production) and restart.");
   process.exit(1);
 }
 
