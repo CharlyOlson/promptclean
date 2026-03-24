@@ -3,8 +3,6 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
-// Gemini client — reads GEMINI_API_KEY from env by default
-const genAI = new GoogleGenAI({});
 const QUESTIONS_MODEL = "gemini-3-flash-preview";
 const CLEANUP_MODEL = "gemini-3-flash-preview";
 
@@ -68,17 +66,13 @@ Return a JSON object with this exact structure:
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
-async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
-  const result = await model.generateContent(
-    `${systemPrompt}\n\nUser input:\n${userInput}`
-  );
-  return result.response.text();
-}
-
 export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  // Gemini client — initialized here so GEMINI_API_KEY is validated before use
+  const genAI = new GoogleGenAI({});
+
   // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {
