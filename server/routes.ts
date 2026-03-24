@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
@@ -65,6 +65,15 @@ Return a JSON object with this exact structure:
 
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
+
+async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
+  const modelWithSystem = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    systemInstruction: systemPrompt,
+  });
+  const result = await modelWithSystem.generateContent(userInput);
+  return result.response.text();
+}
 
 export async function registerRoutes(
   httpServer: Server,
