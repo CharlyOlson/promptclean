@@ -1,11 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const openai = new OpenAI();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-// ── Prompt 1: Generate clarifying questions ───────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
 A bad prompt skipped from Feel straight to Do. Your job is to surface exactly what got skipped in the middle — the Understand and Decide stages — so the rewriter can fill them in with precision instead of assumption.
@@ -42,7 +42,6 @@ Return a JSON array:
 
 Return only valid JSON. No markdown. No explanation.`;
 
-// ── Prompt 2: Final cleanup using answers ─────────────────────────────────────
 const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine. You receive a raw prompt AND a set of clarifying answers.
 
 Use the answers to eliminate every assumption. Do not guess at anything the answers don't cover.
@@ -67,12 +66,18 @@ Return a JSON object with this exact structure:
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
+async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
+  const result = await model.generateContent(
+    `${systemPrompt}\n\nUser input:\n${userInput}`
+  );
+  return result.response.text();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {
       const { prompt } = req.body;
@@ -80,15 +85,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      const response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        instructions: QUESTIONS_SYSTEM,
-        input: `Raw prompt: "${prompt.trim()}"`,
-      });
-
-      const rawText = typeof response.output_text === "string"
-        ? response.output_text
-        : JSON.stringify(response.output_text);
+      const rawText = await callGemini(
+        QUESTIONS_SYSTEM,
+        `Raw prompt: "${prompt.trim()}"`
+      );
 
       const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
@@ -107,7 +107,6 @@ export async function registerRoutes(
     }
   });
 
-  // ── Step 2: Full cleanup with answers ─────────────────────────────────────
   app.post("/api/cleanup", async (req, res) => {
     try {
       const { prompt, answers } = req.body;
@@ -115,7 +114,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // Build the input with answers incorporated
       const answersBlock = answers && typeof answers === "object" && Object.keys(answers).length > 0
         ? "\n\nClarifying answers provided by the user:\n" +
           Object.entries(answers)
@@ -125,15 +123,7 @@ export async function registerRoutes(
 
       const input = `Raw prompt: "${prompt.trim()}"${answersBlock}`;
 
-      const response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        instructions: CLEANUP_SYSTEM,
-        input,
-      });
-
-      const rawText = typeof response.output_text === "string"
-        ? response.output_text
-        : JSON.stringify(response.output_text);
+      const rawText = await callGemini(CLEANUP_SYSTEM, input);
 
       const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
@@ -184,12 +174,10 @@ export async function registerRoutes(
     }
   });
 
-  // ── Health check ───────────────────────────────────────────────────────────
   app.get("/api/health", (_req, res) => {
-    return res.json({ ok: true, openai: !!process.env.OPENAI_API_KEY });
+    return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
   });
 
-  // ── History ────────────────────────────────────────────────────────────────
   app.get("/api/history", async (_req, res) => {
     try {
       const recent = await storage.getRecentCleanups(5);
