@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
@@ -8,7 +8,6 @@ const genAI = new GoogleGenAI({});
 const QUESTIONS_MODEL = "gemini-3-flash-preview";
 const CLEANUP_MODEL = "gemini-3-flash-preview";
 
-// ── Prompt 1: Generate clarifying questions ───────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
 A bad prompt skipped from Feel straight to Do. Your job is to surface exactly what got skipped in the middle — the Understand and Decide stages — so the rewriter can fill them in with precision instead of assumption.
@@ -45,7 +44,6 @@ Return a JSON array:
 
 Return only valid JSON. No markdown. No explanation.`;
 
-// ── Prompt 2: Final cleanup using answers ─────────────────────────────────────
 const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine. You receive a raw prompt AND a set of clarifying answers.
 
 Use the answers to eliminate every assumption. Do not guess at anything the answers don't cover.
@@ -69,6 +67,15 @@ Return a JSON object with this exact structure:
 
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
+
+async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
+  const modelWithSystem = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    systemInstruction: systemPrompt,
+  });
+  const result = await modelWithSystem.generateContent(userInput);
+  return result.response.text();
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -114,7 +121,6 @@ export async function registerRoutes(
     }
   });
 
-  // ── Step 2: Full cleanup with answers ─────────────────────────────────────
   app.post("/api/cleanup", async (req, res) => {
     try {
       const { prompt, answers } = req.body;
@@ -199,12 +205,10 @@ export async function registerRoutes(
     }
   });
 
-  // ── Health check ───────────────────────────────────────────────────────────
   app.get("/api/health", (_req, res) => {
     return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
   });
 
-  // ── History ────────────────────────────────────────────────────────────────
   app.get("/api/history", async (_req, res) => {
     try {
       const recent = await storage.getRecentCleanups(5);
