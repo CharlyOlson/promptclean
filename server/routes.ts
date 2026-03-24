@@ -3,8 +3,6 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
-// Gemini client — reads GEMINI_API_KEY from env by default
-const genAI = new GoogleGenAI({});
 const QUESTIONS_MODEL = "gemini-3-flash-preview";
 const CLEANUP_MODEL = "gemini-3-flash-preview";
 
@@ -81,6 +79,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  // Gemini client — initialized here so GEMINI_API_KEY is validated before use
+  const genAI = new GoogleGenAI({});
+
   // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {
