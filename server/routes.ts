@@ -5,8 +5,10 @@ import { GoogleGenAI } from "@google/genai";
 
 // Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
-const QUESTIONS_MODEL = "gemini-2.0-flash";
-const CLEANUP_MODEL = "gemini-2.0-flash";
+
+// Use the free‑tier, high‑throughput model
+const QUESTIONS_MODEL = "gemini-2.5-flash-lite";
+const CLEANUP_MODEL = "gemini-2.5-flash-lite";
 
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
@@ -106,12 +108,24 @@ export async function registerRoutes(
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
+
+      const status = error?.status ?? error?.code;
+      const msg = error?.message ?? error?.error?.message;
+
+      if (status === 429 || error?.status === "RESOURCE_EXHAUSTED") {
+        return res.status(429).json({
+          message:
+            "Gemini API quota is exhausted. Please try again later or add billing to your Google project.",
+        });
+      }
+
       return res
         .status(500)
-        .json({ message: error.message || "Internal server error" });
+        .json({ message: msg || "Internal server error" });
     }
   });
 
+  // ── Step 2: Full cleanup with answers ─────────────────────────────────────
   app.post("/api/cleanup", async (req, res) => {
     try {
       const { prompt, answers } = req.body;
@@ -190,9 +204,20 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Cleanup error:", error);
+
+      const status = error?.status ?? error?.code;
+      const msg = error?.message ?? error?.error?.message;
+
+      if (status === 429 || error?.status === "RESOURCE_EXHAUSTED") {
+        return res.status(429).json({
+          message:
+            "Gemini API quota is exhausted. Please try again later or add billing to your Google project.",
+        });
+      }
+
       return res
         .status(500)
-        .json({ message: error.message || "Internal server error" });
+        .json({ message: msg || "Internal server error" });
     }
   });
 
