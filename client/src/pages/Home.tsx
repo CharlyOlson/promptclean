@@ -27,8 +27,8 @@ type Stage = "input" | "questions" | "processing" | "done";
 // ── Theme ──────────────────────────────────────────────────────────────────────
 function useTheme() {
   const [isDark, setIsDark] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches || true;
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
     return true;
   });
