@@ -8,8 +8,24 @@ import type { WeightedAnswer } from "@shared/schema";
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
 // Use the free‑tier, high‑throughput model
-const QUESTIONS_MODEL = "gemini-2.5-flash-lite";
-const CLEANUP_MODEL = "gemini-2.5-flash-lite";
+const QUESTIONS_MODEL = "gemini-2.0-flash";
+const CLEANUP_MODEL = "gemini-2.0-flash";
+
+async function generateWithRetry(input: string, model: string, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await genAI.models.generateContent({ model, contents: input });
+    } catch (err: any) {
+      const is503 =
+        err?.status === 503 || String(err?.message).includes("UNAVAILABLE");
+      if (is503 && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
@@ -87,10 +103,7 @@ export async function registerRoutes(
 
       const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
 
-      const response = await genAI.models.generateContent({
-        model: QUESTIONS_MODEL,
-        contents: input,
-      });
+      const response = await generateWithRetry(input, QUESTIONS_MODEL);
 
       const rawText = response.text ?? "";
       const cleaned = rawText
@@ -170,10 +183,7 @@ export async function registerRoutes(
         `Raw prompt: "${prompt.trim()}"` +
         answersBlock;
 
-      const response = await genAI.models.generateContent({
-        model: CLEANUP_MODEL,
-        contents: input,
-      });
+      const response = await generateWithRetry(input, CLEANUP_MODEL);
 
       const rawText = response.text ?? "";
       const cleaned = rawText
