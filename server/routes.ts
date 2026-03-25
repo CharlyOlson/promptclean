@@ -3,10 +3,10 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 
-// Gemini client — reads GEMINI_API_KEY from env by default
-const genAI = new GoogleGenAI({});
-const QUESTIONS_MODEL = "gemini-3-flash-preview";
-const CLEANUP_MODEL = "gemini-3-flash-preview";
+// Gemini client — reads GEMINI_API_KEY from env
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
+const QUESTIONS_MODEL = "gemini-2.0-flash";
+const CLEANUP_MODEL = "gemini-2.0-flash";
 
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
@@ -67,15 +67,6 @@ Return a JSON object with this exact structure:
 
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
-
-async function callGemini(systemPrompt: string, userInput: string): Promise<string> {
-  const modelWithSystem = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: systemPrompt,
-  });
-  const result = await modelWithSystem.generateContent(userInput);
-  return result.response.text();
-}
 
 export async function registerRoutes(
   httpServer: Server,
