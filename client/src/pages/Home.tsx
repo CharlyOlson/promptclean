@@ -452,15 +452,13 @@ export default function Home() {
   /** Unified handler for the new QuestionCard onChange signature */
   const handleQuestionChange = useCallback(
     (qid: string, answer: { selected: OptionState[]; text: string }) => {
-      // Store text answer (for choice/text types)
-      if (answer.text !== undefined) {
-        setAnswers((prev) => ({ ...prev, [qid]: answer.text }));
-      }
-      // Store weighted state (for weighted-choice type)
-      if (answer.selected && answer.selected.some((o) => o.selected)) {
+      // Always store the text answer (for choice/text, or empty string for weighted-choice)
+      setAnswers((prev) => ({ ...prev, [qid]: answer.text }));
+      // Store weighted state when any option is selected
+      const hasSelected = answer.selected.some((o) => o.selected);
+      if (hasSelected) {
         setWeightedState((prev) => ({ ...prev, [qid]: answer.selected }));
       } else {
-        // Clear weighted state if nothing selected
         setWeightedState((prev) => {
           const next = { ...prev };
           delete next[qid];
@@ -588,7 +586,7 @@ export default function Home() {
                 node={q.node}
                 question={q.question}
                 type={q.type}
-                options={questionOptions[q.id] ?? (q.options ?? []).map((text, j) => ({ id: `opt${j}`, text }))}
+                options={questionOptions[q.id] ?? buildQuestionOptions(q.options ?? [])}
                 textAnswer={answers[q.id] ?? ""}
                 onChange={handleQuestionChange}
                 index={i}

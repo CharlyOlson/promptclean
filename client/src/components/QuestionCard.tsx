@@ -13,7 +13,7 @@ export interface QuestionOption {
 export interface OptionState extends QuestionOption {
   selected: boolean;
   weight: number;
-  customText: string;
+  customText: string; // populated only for isCustom options, empty string otherwise
 }
 
 interface Props {
