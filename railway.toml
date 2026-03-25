@@ -1,6 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci && npm run build"
+buildCommand = "npm run build"
+
+[build.nixpacksPlan.variables]
+NIXPACKS_NODE_VERSION = "20"
 
 [deploy]
 startCommand = "npm run start"
