@@ -2,6 +2,9 @@ import { useState, useCallback } from "react";
 import type { Option, OptionId } from "@shared/schema";
 import { Slider } from "@/components/ui/slider";
 
+/** Default weight assigned when an option is first selected */
+const DEFAULT_WEIGHT = 50;
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface WeightedMultiSelectProps {
   /** Pre-built option list (from the question's `options` field) */
@@ -23,7 +26,7 @@ export default function WeightedMultiSelect({
   const toggle = useCallback(
     (id: OptionId) => {
       const next = options.map((o) =>
-        o.id === id ? { ...o, selected: !o.selected, weight: !o.selected ? 50 : 0 } : o,
+        o.id === id ? { ...o, selected: !o.selected, weight: !o.selected ? DEFAULT_WEIGHT : 0 } : o,
       );
       onChange(next);
     },
@@ -41,8 +44,9 @@ export default function WeightedMultiSelect({
   const handleCustomTextChange = useCallback(
     (text: string) => {
       setCustomText(text);
+      const hasText = text.trim().length > 0;
       const next = options.map((o) =>
-        o.isCustom ? { ...o, text, selected: text.trim().length > 0, weight: o.weight || 50 } : o,
+        o.isCustom ? { ...o, text, selected: hasText, weight: hasText ? (o.weight || DEFAULT_WEIGHT) : 0 } : o,
       );
       onChange(next);
     },

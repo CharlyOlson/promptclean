@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
+import type { WeightedAnswer } from "@shared/schema";
 
 // Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
@@ -146,9 +147,9 @@ export async function registerRoutes(
       // Append structured weighted answers when present
       if (Array.isArray(weightedAnswers) && weightedAnswers.length > 0) {
         answersBlock += "\n\nWeighted preference answers:\n" +
-          weightedAnswers.map((wa: any) => {
+          (weightedAnswers as WeightedAnswer[]).map((wa) => {
             const sels = Array.isArray(wa.selections)
-              ? wa.selections.map((s: any) => `  • ${s.text} (weight: ${s.weight}/100)`).join("\n")
+              ? wa.selections.map((s) => `  • ${s.text} (weight: ${s.weight}/100)`).join("\n")
               : "";
             return `- ${wa.questionId}:\n${sels}`;
           }).join("\n");
