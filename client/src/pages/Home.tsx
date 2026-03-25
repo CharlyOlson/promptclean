@@ -1,17 +1,51 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight } from "lucide-react";
-import type { Cleanup } from "@shared/schema";
+import type { Cleanup, WeightedAnswer } from "@shared/schema";
+import QuestionCard from "@/components/QuestionCard";
+import type { OptionState, QuestionOption } from "@/components/QuestionCard";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
   id: string;
   node: "alpha" | "beta" | "gamma";
   question: string;
-  type: "choice" | "text";
+  type: "choice" | "text" | "weighted-choice";
   options?: string[];
+}
+
+/** Build QuestionOption[] from the raw string array returned by the API */
+function buildQuestionOptions(raw: string[]): QuestionOption[] {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const opts: QuestionOption[] = raw.map((text, i) => ({
+    id: letters[i] ?? `opt${i}`,
+    text,
+  }));
+  // append a "type your own" slot
+  opts.push({ id: "custom", text: "", isCustom: true });
+  return opts;
+}
+
+/** Serialise OptionState[] into a plain-text answer for the cleanup API */
+function serialiseWeightedAnswer(states: OptionState[]): string {
+  const selected = states.filter((o) => o.selected && o.text.trim());
+  if (selected.length === 0) return "";
+  return selected
+    .map((o) => `${o.text} (weight: ${o.weight})`)
+    .join("; ");
+}
+
+/** Build a WeightedAnswer payload from OptionState[] */
+function toWeightedPayload(questionId: string, states: OptionState[]): WeightedAnswer {
+  const selected = states.filter((o) => o.selected && o.text.trim());
+  const custom = selected.find((o) => o.isCustom);
+  return {
+    questionId,
+    selections: selected.map((o) => ({ optionId: o.id, text: o.text, weight: o.weight })),
+    customText: custom?.customText || custom?.text,
+  };
 }
 
 interface CleanupResult {
@@ -102,73 +136,6 @@ function NodePipeline({ activeIndex }: { activeIndex: number }) {
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Question Card ─────────────────────────────────────────────────────────────
-function QuestionCard({
-  q,
-  answer,
-  onChange,
-  index,
-}: {
-  q: Question;
-  answer: string;
-  onChange: (id: string, val: string) => void;
-  index: number;
-}) {
-  const nodeLabel = q.node.charAt(0).toUpperCase() + q.node.slice(1);
-  const color = NODE_COLOR[q.node] ?? NODE_COLOR.alpha;
-
-  return (
-    <div
-      className="rounded-lg border border-border bg-card p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-      style={{ animationDelay: `${index * 80}ms` }}
-      data-testid={`question-card-${q.id}`}
-    >
-      {/* Node badge + question */}
-      <div className="flex items-start gap-3">
-        <span
-          className="text-[10px] font-display font-bold uppercase tracking-wider px-2 py-0.5 rounded shrink-0 mt-0.5"
-          style={{ color, backgroundColor: `${color}18` }}
-        >
-          {nodeLabel}
-        </span>
-        <p className="text-sm text-foreground leading-snug">{q.question}</p>
-      </div>
-
-      {/* Answer input */}
-      {q.type === "choice" && q.options ? (
-        <div className="flex flex-wrap gap-2 pl-[52px]">
-          {q.options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => onChange(q.id, opt)}
-              data-testid={`choice-${q.id}-${opt}`}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all duration-150 ${
-                answer === opt
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-background hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={answer}
-          onChange={(e) => onChange(q.id, e.target.value)}
-          placeholder="Type your answer..."
-          data-testid={`input-${q.id}`}
-          className="w-full ml-[52px] rounded-md border border-border bg-background px-3 py-2 text-sm
-            placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40
-            transition-shadow"
-          style={{ width: "calc(100% - 52px)" }}
-        />
-      )}
     </div>
   );
 }
@@ -379,6 +346,8 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("input");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [weightedState, setWeightedState] = useState<Record<string, OptionState[]>>({});
+  const [questionOptions, setQuestionOptions] = useState<Record<string, QuestionOption[]>>({});
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [activeNode, setActiveNode] = useState(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -408,6 +377,15 @@ export default function Home() {
       setActiveNode(-1);
       setQuestions(data.questions);
       setAnswers({});
+      // Initialise per-question option data for weighted-choice questions
+      const qOpts: Record<string, QuestionOption[]> = {};
+      for (const q of data.questions) {
+        if (q.options) {
+          qOpts[q.id] = buildQuestionOptions(q.options);
+        }
+      }
+      setQuestionOptions(qOpts);
+      setWeightedState({});
       setStage("questions");
     },
     onError: (err: Error) => {
@@ -420,8 +398,8 @@ export default function Home() {
 
   // ── Step 2: run full cleanup with answers ───────────────────────────────────
   const cleanupMutation = useMutation({
-    mutationFn: async ({ rawPrompt, ans }: { rawPrompt: string; ans: Record<string, string> }) => {
-      const res = await apiRequest("POST", "/api/cleanup", { prompt: rawPrompt, answers: ans });
+    mutationFn: async ({ rawPrompt, ans, weightedAnswers }: { rawPrompt: string; ans: Record<string, string>; weightedAnswers?: WeightedAnswer[] }) => {
+      const res = await apiRequest("POST", "/api/cleanup", { prompt: rawPrompt, answers: ans, weightedAnswers });
       return (await res.json()) as CleanupResult;
     },
     onMutate: () => {
@@ -458,12 +436,38 @@ export default function Home() {
   };
 
   const handleFinalize = () => {
-    cleanupMutation.mutate({ rawPrompt: prompt.trim(), ans: answers });
+    // Merge weighted multi-select answers into the flat answers record
+    const merged = { ...answers };
+    for (const [qid, states] of Object.entries(weightedState)) {
+      const serialised = serialiseWeightedAnswer(states);
+      if (serialised) merged[qid] = serialised;
+    }
+    // Build weighted payloads for richer backend processing
+    const weightedAnswers: WeightedAnswer[] = Object.entries(weightedState)
+      .map(([qid, states]) => toWeightedPayload(qid, states))
+      .filter((w) => w.selections.length > 0);
+    cleanupMutation.mutate({ rawPrompt: prompt.trim(), ans: merged, weightedAnswers });
   };
 
-  const handleAnswerChange = (id: string, val: string) => {
-    setAnswers((prev) => ({ ...prev, [id]: val }));
-  };
+  /** Unified handler for the new QuestionCard onChange signature */
+  const handleQuestionChange = useCallback(
+    (qid: string, answer: { selected: OptionState[]; text: string }) => {
+      // Always store the text answer (for choice/text, or empty string for weighted-choice)
+      setAnswers((prev) => ({ ...prev, [qid]: answer.text }));
+      // Store weighted state when any option is selected
+      const hasSelected = answer.selected.some((o) => o.selected);
+      if (hasSelected) {
+        setWeightedState((prev) => ({ ...prev, [qid]: answer.selected }));
+      } else {
+        setWeightedState((prev) => {
+          const next = { ...prev };
+          delete next[qid];
+          return next;
+        });
+      }
+    },
+    [],
+  );
 
   const handleHistorySelect = (item: Cleanup) => {
     setPrompt(item.originalPrompt);
@@ -471,6 +475,8 @@ export default function Home() {
     setResult(null);
     setQuestions([]);
     setAnswers({});
+    setWeightedState({});
+    setQuestionOptions({});
   };
 
   const handleReset = () => {
@@ -478,10 +484,14 @@ export default function Home() {
     setResult(null);
     setQuestions([]);
     setAnswers({});
+    setWeightedState({});
+    setQuestionOptions({});
     setActiveNode(-1);
   };
 
-  const answeredCount = Object.keys(answers).filter((k) => answers[k]?.trim()).length;
+  const answeredCount =
+    Object.keys(answers).filter((k) => answers[k]?.trim()).length +
+    Object.values(weightedState).filter((opts) => opts.some((o) => o.selected && o.text.trim())).length;
   const isPending = questionsMutation.isPending || cleanupMutation.isPending;
 
   return (
@@ -572,9 +582,13 @@ export default function Home() {
             {questions.map((q, i) => (
               <QuestionCard
                 key={q.id}
-                q={q}
-                answer={answers[q.id] ?? ""}
-                onChange={handleAnswerChange}
+                questionId={q.id}
+                node={q.node}
+                question={q.question}
+                type={q.type}
+                options={questionOptions[q.id] ?? buildQuestionOptions(q.options ?? [])}
+                textAnswer={answers[q.id] ?? ""}
+                onChange={handleQuestionChange}
                 index={i}
               />
             ))}

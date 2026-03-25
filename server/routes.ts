@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
+import type { WeightedAnswer } from "@shared/schema";
 
 // Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
@@ -39,10 +40,12 @@ Return a JSON array:
     "id": "q1",
     "node": "alpha" | "beta" | "gamma",
     "question": "the question text",
-    "type": "choice" | "text",
-    "options": ["option 1", "option 2", ...] // only for choice type, 2–4 options max
+    "type": "choice" | "text" | "weighted-choice",
+    "options": ["option 1", "option 2", ...] // only for choice or weighted-choice type, 2–5 options max
   }
 ]
+
+Use "weighted-choice" when the question has multiple valid options and the user's preference intensity matters (e.g. priorities, preferences, trade-offs). Regular "choice" is for mutually-exclusive single answers.
 
 Return only valid JSON. No markdown. No explanation.`;
 
@@ -128,20 +131,32 @@ export async function registerRoutes(
   // ── Step 2: Full cleanup with answers ─────────────────────────────────────
   app.post("/api/cleanup", async (req, res) => {
     try {
-      const { prompt, answers } = req.body;
+      const { prompt, answers, weightedAnswers } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      const answersBlock =
-        answers &&
-        typeof answers === "object" &&
-        Object.keys(answers).length > 0
-          ? "\n\nClarifying answers provided by the user:\n" +
-            Object.entries(answers)
-              .map(([qid, ans]) => `- ${qid}: ${ans}`)
-              .join("\n")
-          : "\n\nNo clarifying answers provided — rewrite with best general precision.";
+      // Build the clarifying-answers block for the AI prompt
+      let answersBlock = "";
+      if (answers && typeof answers === "object" && Object.keys(answers).length > 0) {
+        answersBlock = "\n\nClarifying answers provided by the user:\n" +
+          Object.entries(answers)
+            .map(([qid, ans]) => `- ${qid}: ${ans}`)
+            .join("\n");
+      }
+      // Append structured weighted answers when present
+      if (Array.isArray(weightedAnswers) && weightedAnswers.length > 0) {
+        answersBlock += "\n\nWeighted preference answers:\n" +
+          (weightedAnswers as WeightedAnswer[]).map((wa) => {
+            const sels = Array.isArray(wa.selections)
+              ? wa.selections.map((s) => `  • ${s.text} (weight: ${s.weight}/100)`).join("\n")
+              : "";
+            return `- ${wa.questionId}:\n${sels}`;
+          }).join("\n");
+      }
+      if (!answersBlock) {
+        answersBlock = "\n\nNo clarifying answers provided — rewrite with best general precision.";
+      }
 
       const input =
         `${CLEANUP_SYSTEM}\n\n` +
