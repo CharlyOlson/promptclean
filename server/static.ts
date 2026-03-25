@@ -14,7 +14,7 @@ export function serveStatic(app: Express) {
   app.use(express.static(distPath));
 
   // Fallback to index.html for any other GET route (SPA routing)
-  app.get("*", (_req, res) => {
+  app.get("/{*path}", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
