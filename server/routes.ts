@@ -113,12 +113,19 @@ export async function registerRoutes(
       console.error("Questions error:", error);
 
       const status = error?.status ?? error?.code;
-      const msg = error?.message ?? error?.error?.message;
+      const msg = error?.message ?? error?.error?.message ?? "";
 
-      if (status === 429 || error?.status === "RESOURCE_EXHAUSTED") {
+      if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
           message:
-            "Gemini API quota is exhausted. Please try again later or add billing to your Google project.",
+            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
+        });
+      }
+
+      if (status === 503 || String(msg).includes("UNAVAILABLE")) {
+        return res.status(503).json({
+          message:
+            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
         });
       }
 
@@ -221,15 +228,25 @@ export async function registerRoutes(
       console.error("Cleanup error:", error);
 
       const status = error?.status ?? error?.code;
-      const msg = error?.message ?? error?.error?.message;
+      const msg = error?.message ?? error?.error?.message ?? "";
 
-      if (status === 429 || error?.status === "RESOURCE_EXHAUSTED") {
+      // Gemini quota / rate limit
+      if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
           message:
-            "Gemini API quota is exhausted. Please try again later or add billing to your Google project.",
+            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
         });
       }
 
+      // Gemini model overloaded / UNAVAILABLE
+      if (status === 503 || String(msg).includes("UNAVAILABLE")) {
+        return res.status(503).json({
+          message:
+            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
+        });
+      }
+
+      // Fallback: real server error
       return res
         .status(500)
         .json({ message: msg || "Internal server error" });
@@ -245,6 +262,13 @@ export async function registerRoutes(
       const recent = await storage.getRecentCleanups(5);
       return res.json(recent);
     } catch (error: any) {
+      const msg = String(error?.message || "");
+
+      if (msg.includes("no such table: cleanups")) {
+        console.warn("cleanups table not yet initialized — returning empty history");
+        return res.json([]);
+      }
+
       console.error("History error:", error);
       return res
         .status(500)
