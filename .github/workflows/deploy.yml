@@ -25,7 +25,7 @@ jobs:
 
       - name: Verify lockfile is in sync
         run: npm ci
-
+    
       - name: Verify @google/generative-ai in lockfile
         run: |
           if ! grep -q "google/generative-ai" package-lock.json; then
