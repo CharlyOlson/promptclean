@@ -3,8 +3,9 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight } from "lucide-react";
-import type { Cleanup, Option, WeightedAnswer } from "@shared/schema";
-import WeightedMultiSelect from "@/components/WeightedMultiSelect";
+import type { Cleanup, WeightedAnswer } from "@shared/schema";
+import QuestionCard from "@/components/QuestionCard";
+import type { OptionState, QuestionOption } from "@/components/QuestionCard";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
@@ -15,45 +16,35 @@ interface Question {
   options?: string[];
 }
 
-/** Build Option[] from the raw string array returned by the API */
-function buildWeightedOptions(raw: string[]): Option[] {
+/** Build QuestionOption[] from the raw string array returned by the API */
+function buildQuestionOptions(raw: string[]): QuestionOption[] {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const opts: Option[] = raw.map((text, i) => ({
+  const opts: QuestionOption[] = raw.map((text, i) => ({
     id: letters[i] ?? `opt${i}`,
-    label: `${letters[i] ?? i}.`,
     text,
-    selected: false,
-    weight: 0,
   }));
   // append a "type your own" slot
-  opts.push({
-    id: "custom",
-    label: "",
-    text: "",
-    selected: false,
-    weight: 0,
-    isCustom: true,
-  });
+  opts.push({ id: "custom", text: "", isCustom: true });
   return opts;
 }
 
-/** Serialise weighted options into a plain-text answer for the cleanup API */
-function serialiseWeightedAnswer(opts: Option[]): string {
-  const selected = opts.filter((o) => o.selected && o.text.trim());
+/** Serialise OptionState[] into a plain-text answer for the cleanup API */
+function serialiseWeightedAnswer(states: OptionState[]): string {
+  const selected = states.filter((o) => o.selected && o.text.trim());
   if (selected.length === 0) return "";
   return selected
     .map((o) => `${o.text} (weight: ${o.weight})`)
     .join("; ");
 }
 
-/** Build a WeightedAnswer payload from options */
-function toWeightedPayload(questionId: string, opts: Option[]): WeightedAnswer {
-  const selected = opts.filter((o) => o.selected && o.text.trim());
-  const custom = opts.find((o) => o.isCustom && o.selected);
+/** Build a WeightedAnswer payload from OptionState[] */
+function toWeightedPayload(questionId: string, states: OptionState[]): WeightedAnswer {
+  const selected = states.filter((o) => o.selected && o.text.trim());
+  const custom = selected.find((o) => o.isCustom);
   return {
     questionId,
     selections: selected.map((o) => ({ optionId: o.id, text: o.text, weight: o.weight })),
-    customText: custom?.text,
+    customText: custom?.customText || custom?.text,
   };
 }
 
@@ -145,83 +136,6 @@ function NodePipeline({ activeIndex }: { activeIndex: number }) {
           )}
         </div>
       ))}
-    </div>
-  );
-}
-
-// ── Question Card ─────────────────────────────────────────────────────────────
-function QuestionCard({
-  q,
-  answer,
-  weightedOptions,
-  onChange,
-  onWeightedChange,
-  index,
-}: {
-  q: Question;
-  answer: string;
-  weightedOptions?: Option[];
-  onChange: (id: string, val: string) => void;
-  onWeightedChange: (id: string, opts: Option[]) => void;
-  index: number;
-}) {
-  const nodeLabel = q.node.charAt(0).toUpperCase() + q.node.slice(1);
-  const color = NODE_COLOR[q.node] ?? NODE_COLOR.alpha;
-
-  return (
-    <div
-      className="rounded-lg border border-border bg-card p-4 space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-      style={{ animationDelay: `${index * 80}ms` }}
-      data-testid={`question-card-${q.id}`}
-    >
-      {/* Node badge + question */}
-      <div className="flex items-start gap-3">
-        <span
-          className="text-[10px] font-display font-bold uppercase tracking-wider px-2 py-0.5 rounded shrink-0 mt-0.5"
-          style={{ color, backgroundColor: `${color}18` }}
-        >
-          {nodeLabel}
-        </span>
-        <p className="text-sm text-foreground leading-snug">{q.question}</p>
-      </div>
-
-      {/* Answer input */}
-      {q.type === "weighted-choice" && weightedOptions ? (
-        <WeightedMultiSelect
-          options={weightedOptions}
-          onChange={(opts) => onWeightedChange(q.id, opts)}
-          accentColor={color}
-        />
-      ) : q.type === "choice" && q.options ? (
-        <div className="flex flex-wrap gap-2 pl-[52px]">
-          {q.options.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => onChange(q.id, opt)}
-              data-testid={`choice-${q.id}-${opt}`}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all duration-150 ${
-                answer === opt
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-background hover:border-primary/50 hover:bg-primary/5 text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={answer}
-          onChange={(e) => onChange(q.id, e.target.value)}
-          placeholder="Type your answer..."
-          data-testid={`input-${q.id}`}
-          className="w-full ml-[52px] rounded-md border border-border bg-background px-3 py-2 text-sm
-            placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40
-            transition-shadow"
-          style={{ width: "calc(100% - 52px)" }}
-        />
-      )}
     </div>
   );
 }
@@ -432,7 +346,8 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("input");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [weightedState, setWeightedState] = useState<Record<string, Option[]>>({});
+  const [weightedState, setWeightedState] = useState<Record<string, OptionState[]>>({});
+  const [questionOptions, setQuestionOptions] = useState<Record<string, QuestionOption[]>>({});
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [activeNode, setActiveNode] = useState(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -462,14 +377,15 @@ export default function Home() {
       setActiveNode(-1);
       setQuestions(data.questions);
       setAnswers({});
-      // Initialise weighted-option state for each weighted-choice question
-      const wState: Record<string, Option[]> = {};
+      // Initialise per-question option data for weighted-choice questions
+      const qOpts: Record<string, QuestionOption[]> = {};
       for (const q of data.questions) {
-        if (q.type === "weighted-choice" && q.options) {
-          wState[q.id] = buildWeightedOptions(q.options);
+        if (q.options) {
+          qOpts[q.id] = buildQuestionOptions(q.options);
         }
       }
-      setWeightedState(wState);
+      setQuestionOptions(qOpts);
+      setWeightedState({});
       setStage("questions");
     },
     onError: (err: Error) => {
@@ -522,24 +438,35 @@ export default function Home() {
   const handleFinalize = () => {
     // Merge weighted multi-select answers into the flat answers record
     const merged = { ...answers };
-    for (const [qid, opts] of Object.entries(weightedState)) {
-      const serialised = serialiseWeightedAnswer(opts);
+    for (const [qid, states] of Object.entries(weightedState)) {
+      const serialised = serialiseWeightedAnswer(states);
       if (serialised) merged[qid] = serialised;
     }
     // Build weighted payloads for richer backend processing
     const weightedAnswers: WeightedAnswer[] = Object.entries(weightedState)
-      .map(([qid, opts]) => toWeightedPayload(qid, opts))
+      .map(([qid, states]) => toWeightedPayload(qid, states))
       .filter((w) => w.selections.length > 0);
     cleanupMutation.mutate({ rawPrompt: prompt.trim(), ans: merged, weightedAnswers });
   };
 
-  const handleAnswerChange = (id: string, val: string) => {
-    setAnswers((prev) => ({ ...prev, [id]: val }));
-  };
-
-  const handleWeightedChange = useCallback(
-    (id: string, opts: Option[]) => {
-      setWeightedState((prev) => ({ ...prev, [id]: opts }));
+  /** Unified handler for the new QuestionCard onChange signature */
+  const handleQuestionChange = useCallback(
+    (qid: string, answer: { selected: OptionState[]; text: string }) => {
+      // Store text answer (for choice/text types)
+      if (answer.text !== undefined) {
+        setAnswers((prev) => ({ ...prev, [qid]: answer.text }));
+      }
+      // Store weighted state (for weighted-choice type)
+      if (answer.selected && answer.selected.some((o) => o.selected)) {
+        setWeightedState((prev) => ({ ...prev, [qid]: answer.selected }));
+      } else {
+        // Clear weighted state if nothing selected
+        setWeightedState((prev) => {
+          const next = { ...prev };
+          delete next[qid];
+          return next;
+        });
+      }
     },
     [],
   );
@@ -551,6 +478,7 @@ export default function Home() {
     setQuestions([]);
     setAnswers({});
     setWeightedState({});
+    setQuestionOptions({});
   };
 
   const handleReset = () => {
@@ -559,6 +487,7 @@ export default function Home() {
     setQuestions([]);
     setAnswers({});
     setWeightedState({});
+    setQuestionOptions({});
     setActiveNode(-1);
   };
 
@@ -655,11 +584,13 @@ export default function Home() {
             {questions.map((q, i) => (
               <QuestionCard
                 key={q.id}
-                q={q}
-                answer={answers[q.id] ?? ""}
-                weightedOptions={weightedState[q.id]}
-                onChange={handleAnswerChange}
-                onWeightedChange={handleWeightedChange}
+                questionId={q.id}
+                node={q.node}
+                question={q.question}
+                type={q.type}
+                options={questionOptions[q.id] ?? (q.options ?? []).map((text, j) => ({ id: `opt${j}`, text }))}
+                textAnswer={answers[q.id] ?? ""}
+                onChange={handleQuestionChange}
                 index={i}
               />
             ))}
