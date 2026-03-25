@@ -1,17 +1,60 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight } from "lucide-react";
-import type { Cleanup } from "@shared/schema";
+import type { Cleanup, Option, WeightedAnswer } from "@shared/schema";
+import WeightedMultiSelect from "@/components/WeightedMultiSelect";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
   id: string;
   node: "alpha" | "beta" | "gamma";
   question: string;
-  type: "choice" | "text";
+  type: "choice" | "text" | "weighted-choice";
   options?: string[];
+}
+
+/** Build Option[] from the raw string array returned by the API */
+function buildWeightedOptions(raw: string[]): Option[] {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const opts: Option[] = raw.map((text, i) => ({
+    id: letters[i] ?? `opt${i}`,
+    label: `${letters[i] ?? i}.`,
+    text,
+    selected: false,
+    weight: 0,
+  }));
+  // append a "type your own" slot
+  opts.push({
+    id: "custom",
+    label: "",
+    text: "",
+    selected: false,
+    weight: 0,
+    isCustom: true,
+  });
+  return opts;
+}
+
+/** Serialise weighted options into a plain-text answer for the cleanup API */
+function serialiseWeightedAnswer(opts: Option[]): string {
+  const selected = opts.filter((o) => o.selected && o.text.trim());
+  if (selected.length === 0) return "";
+  return selected
+    .map((o) => `${o.text} (weight: ${o.weight})`)
+    .join("; ");
+}
+
+/** Build a WeightedAnswer payload from options */
+function toWeightedPayload(questionId: string, opts: Option[]): WeightedAnswer {
+  const selected = opts.filter((o) => o.selected && o.text.trim());
+  const custom = opts.find((o) => o.isCustom && o.selected);
+  return {
+    questionId,
+    selections: selected.map((o) => ({ optionId: o.id, text: o.text, weight: o.weight })),
+    customText: custom?.text,
+  };
 }
 
 interface CleanupResult {
@@ -110,12 +153,16 @@ function NodePipeline({ activeIndex }: { activeIndex: number }) {
 function QuestionCard({
   q,
   answer,
+  weightedOptions,
   onChange,
+  onWeightedChange,
   index,
 }: {
   q: Question;
   answer: string;
+  weightedOptions?: Option[];
   onChange: (id: string, val: string) => void;
+  onWeightedChange: (id: string, opts: Option[]) => void;
   index: number;
 }) {
   const nodeLabel = q.node.charAt(0).toUpperCase() + q.node.slice(1);
@@ -139,7 +186,13 @@ function QuestionCard({
       </div>
 
       {/* Answer input */}
-      {q.type === "choice" && q.options ? (
+      {q.type === "weighted-choice" && weightedOptions ? (
+        <WeightedMultiSelect
+          options={weightedOptions}
+          onChange={(opts) => onWeightedChange(q.id, opts)}
+          accentColor={color}
+        />
+      ) : q.type === "choice" && q.options ? (
         <div className="flex flex-wrap gap-2 pl-[52px]">
           {q.options.map((opt) => (
             <button
@@ -379,6 +432,7 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("input");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [weightedState, setWeightedState] = useState<Record<string, Option[]>>({});
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [activeNode, setActiveNode] = useState(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -408,6 +462,14 @@ export default function Home() {
       setActiveNode(-1);
       setQuestions(data.questions);
       setAnswers({});
+      // Initialise weighted-option state for each weighted-choice question
+      const wState: Record<string, Option[]> = {};
+      for (const q of data.questions) {
+        if (q.type === "weighted-choice" && q.options) {
+          wState[q.id] = buildWeightedOptions(q.options);
+        }
+      }
+      setWeightedState(wState);
       setStage("questions");
     },
     onError: (err: Error) => {
@@ -420,8 +482,8 @@ export default function Home() {
 
   // ── Step 2: run full cleanup with answers ───────────────────────────────────
   const cleanupMutation = useMutation({
-    mutationFn: async ({ rawPrompt, ans }: { rawPrompt: string; ans: Record<string, string> }) => {
-      const res = await apiRequest("POST", "/api/cleanup", { prompt: rawPrompt, answers: ans });
+    mutationFn: async ({ rawPrompt, ans, weightedAnswers }: { rawPrompt: string; ans: Record<string, string>; weightedAnswers?: WeightedAnswer[] }) => {
+      const res = await apiRequest("POST", "/api/cleanup", { prompt: rawPrompt, answers: ans, weightedAnswers });
       return (await res.json()) as CleanupResult;
     },
     onMutate: () => {
@@ -458,12 +520,29 @@ export default function Home() {
   };
 
   const handleFinalize = () => {
-    cleanupMutation.mutate({ rawPrompt: prompt.trim(), ans: answers });
+    // Merge weighted multi-select answers into the flat answers record
+    const merged = { ...answers };
+    for (const [qid, opts] of Object.entries(weightedState)) {
+      const serialised = serialiseWeightedAnswer(opts);
+      if (serialised) merged[qid] = serialised;
+    }
+    // Build weighted payloads for richer backend processing
+    const weightedAnswers: WeightedAnswer[] = Object.entries(weightedState)
+      .map(([qid, opts]) => toWeightedPayload(qid, opts))
+      .filter((w) => w.selections.length > 0);
+    cleanupMutation.mutate({ rawPrompt: prompt.trim(), ans: merged, weightedAnswers });
   };
 
   const handleAnswerChange = (id: string, val: string) => {
     setAnswers((prev) => ({ ...prev, [id]: val }));
   };
+
+  const handleWeightedChange = useCallback(
+    (id: string, opts: Option[]) => {
+      setWeightedState((prev) => ({ ...prev, [id]: opts }));
+    },
+    [],
+  );
 
   const handleHistorySelect = (item: Cleanup) => {
     setPrompt(item.originalPrompt);
@@ -471,6 +550,7 @@ export default function Home() {
     setResult(null);
     setQuestions([]);
     setAnswers({});
+    setWeightedState({});
   };
 
   const handleReset = () => {
@@ -478,10 +558,13 @@ export default function Home() {
     setResult(null);
     setQuestions([]);
     setAnswers({});
+    setWeightedState({});
     setActiveNode(-1);
   };
 
-  const answeredCount = Object.keys(answers).filter((k) => answers[k]?.trim()).length;
+  const answeredCount =
+    Object.keys(answers).filter((k) => answers[k]?.trim()).length +
+    Object.values(weightedState).filter((opts) => opts.some((o) => o.selected && o.text.trim())).length;
   const isPending = questionsMutation.isPending || cleanupMutation.isPending;
 
   return (
@@ -574,7 +657,9 @@ export default function Home() {
                 key={q.id}
                 q={q}
                 answer={answers[q.id] ?? ""}
+                weightedOptions={weightedState[q.id]}
                 onChange={handleAnswerChange}
+                onWeightedChange={handleWeightedChange}
                 index={i}
               />
             ))}

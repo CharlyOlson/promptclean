@@ -13,3 +13,22 @@ export const cleanups = sqliteTable("cleanups", {
 export const insertCleanupSchema = createInsertSchema(cleanups).omit({ id: true, createdAt: true });
 export type InsertCleanup = z.infer<typeof insertCleanupSchema>;
 export type Cleanup = typeof cleanups.$inferSelect;
+
+// ── Weighted multi-select types ───────────────────────────────────────────────
+export type OptionId = string;
+
+export interface Option {
+  id: OptionId;        // "A", "B", "C", "D"
+  label: string;       // "A.", "B.", etc.
+  text: string;        // the option text shown to the user
+  selected: boolean;
+  weight: number;      // 0–100, only meaningful if selected
+  isCustom?: boolean;  // true for the "type your own" option
+}
+
+/** Serialisable snapshot of a weighted multi-select answer */
+export interface WeightedAnswer {
+  questionId: string;
+  selections: { optionId: OptionId; text: string; weight: number }[];
+  customText?: string; // populated when the user typed a custom option
+}
