@@ -1,13 +1,9 @@
 [build]
-builder = "nixpacks"
 buildCommand = "npm run build"
 
-[build.nixpacksPlan.variables]
-NIXPACKS_NODE_VERSION = "20"
-
 [deploy]
-startCommand = "npm run start"
+startCommand = "node dist/index.cjs"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 10
+restartPolicyMaxRetries = 3
