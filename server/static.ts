@@ -4,10 +4,13 @@ import path from "path";
 
 export function serveStatic(app: Express) {
   const entryFile = process.argv[1];
-  const entryDir =
-    entryFile && path.isAbsolute(entryFile)
-      ? path.dirname(entryFile)
-      : process.cwd();
+  const entryDir = entryFile
+    ? path.dirname(
+        path.isAbsolute(entryFile)
+          ? entryFile
+          : path.resolve(process.cwd(), entryFile),
+      )
+    : process.cwd();
 
   const candidatePaths = [
     // Relative to the entrypoint directory
