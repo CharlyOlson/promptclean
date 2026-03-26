@@ -25,6 +25,7 @@ async function generateWithRetry(input: string, model: string, retries = 3) {
       throw err;
     }
   }
+  throw new Error("generateWithRetry: exhausted all retries without a response");
 }
 
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
