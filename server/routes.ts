@@ -8,8 +8,8 @@ import type { WeightedAnswer } from "@shared/schema";
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
 // Use the free‑tier, high‑throughput model
-const QUESTIONS_MODEL = "gemini-2.0-flash";
-const CLEANUP_MODEL = "gemini-2.0-flash";
+const QUESTIONS_MODEL = "gemini-1.5-flash";
+const CLEANUP_MODEL = "gemini-1.5-flash";
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
