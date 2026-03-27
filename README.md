@@ -20,7 +20,7 @@ Sin — in the philosophical sense from the source doc — lives in stages 2 and
 - **Frontend**: React + Vite + Tailwind + shadcn/ui
 - **Backend**: Express + Node.js
 - **Database**: SQLite via Drizzle ORM
-- **AI**: Google Gemini 1.5 Flash
+- **AI**: Google Gemini 2.5 Flash
 
 ## Setup
 
