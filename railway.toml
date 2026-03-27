@@ -1,9 +1,2 @@
-[build]
-buildCommand = "npm run build"
-
 [deploy]
-startCommand = "npm run start"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 300
-restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
+startCommand = "NODE_ENV=production node dist/index.cjs"
