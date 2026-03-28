@@ -1,18 +1,35 @@
 import { type Cleanup, type InsertCleanup, cleanups } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { desc, sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { desc } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
 
-const sqlite = new Database(process.env.DATABASE_URL ?? "data.db");
+const dbUrl = process.env.DATABASE_URL ?? "/app/data/data.db";
+
+// Ensure the directory exists before opening the database. The volume is
+// mounted before the app process starts, so this runs after the mount and
+// guarantees the schema is created on the persistent volume.
+const dbDir = path.dirname(dbUrl);
+fs.mkdirSync(dbDir, { recursive: true });
+
+const sqlite = new Database(dbUrl);
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite);
 
-// Run Drizzle migrations on startup to ensure the database schema matches
-// the table definitions in @shared/schema (e.g., cleanups).
-migrate(db, { migrationsFolder: "drizzle" });
+// Create the schema on startup using CREATE TABLE IF NOT EXISTS so it is safe
+// to run on every deploy — subsequent runs simply skip table creation.
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS cleanups (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_prompt TEXT    NOT NULL,
+    fixed_prompt    TEXT    NOT NULL,
+    total_score     INTEGER NOT NULL,
+    created_at      INTEGER NOT NULL
+  )
+`);
 
 export interface IStorage {
   createCleanup(cleanup: InsertCleanup): Promise<Cleanup>;
