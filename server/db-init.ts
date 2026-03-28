@@ -1,6 +1,9 @@
-import { execSync } from "child_process";
+import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 export async function initializeDatabase() {
   // Use the same default as elsewhere in the codebase:
@@ -21,24 +24,24 @@ export async function initializeDatabase() {
   }
   const dbDir = path.dirname(dbPath);
 
-  // Ensure directory exists
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
+  // Ensure directory exists (recursive: true is a no-op if it already exists)
+  await fs.promises.mkdir(dbDir, { recursive: true });
 
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV === "production";
 
   if (!isProduction) {
     // Run drizzle-kit push to initialize schema in non-production environments
     try {
-      execSync('npm run db:push', { stdio: 'inherit' });
-      console.log('Database schema initialized successfully');
+      const { stdout, stderr } = await execAsync("npm run db:push");
+      if (stdout) process.stdout.write(stdout);
+      if (stderr) process.stderr.write(stderr);
+      console.log("Database schema initialized successfully");
     } catch (error) {
-      console.error('Failed to initialize database schema:', error);
+      console.error("Failed to initialize database schema:", error);
       throw error;
     }
   } else {
     // In production, assume schema has been migrated during build/deploy
-    console.log('Skipping runtime database schema initialization in production environment');
+    console.log("Skipping runtime database schema initialization in production environment");
   }
 }
