@@ -3,22 +3,21 @@ import fs from "fs";
 import path from "path";
 
 export async function initializeDatabase() {
-  const rawDbUrl = process.env.DATABASE_URL;
+  // Use the same default as elsewhere in the codebase:
+  // DATABASE_URL or "data.db" if it is unset.
+  const effectiveDbUrl = process.env.DATABASE_URL ?? "data.db";
   let dbPath: string;
 
-  if (!rawDbUrl) {
-    // Match the default used elsewhere in the codebase
-    dbPath = 'data.db';
-  } else if (rawDbUrl.startsWith('file:')) {
+  if (effectiveDbUrl.startsWith("file:")) {
     // Normalize file: URIs (e.g., file:/app/data/data.db) to a filesystem path
     try {
-      dbPath = new URL(rawDbUrl).pathname;
+      dbPath = new URL(effectiveDbUrl).pathname;
     } catch {
       // Fallback: use the raw value if URL parsing fails
-      dbPath = rawDbUrl;
+      dbPath = effectiveDbUrl;
     }
   } else {
-    dbPath = rawDbUrl;
+    dbPath = effectiveDbUrl;
   }
   const dbDir = path.dirname(dbPath);
 
