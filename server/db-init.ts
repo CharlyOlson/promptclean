@@ -27,12 +27,19 @@ export async function initializeDatabase() {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  // Run drizzle-kit push to initialize schema
-  try {
-    execSync('npm run db:push', { stdio: 'inherit' });
-    console.log('Database schema initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize database schema:', error);
-    throw error;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!isProduction) {
+    // Run drizzle-kit push to initialize schema in non-production environments
+    try {
+      execSync('npm run db:push', { stdio: 'inherit' });
+      console.log('Database schema initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize database schema:', error);
+      throw error;
+    }
+  } else {
+    // In production, assume schema has been migrated during build/deploy
+    console.log('Skipping runtime database schema initialization in production environment');
   }
 }
