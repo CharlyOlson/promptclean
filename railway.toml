@@ -2,7 +2,7 @@
 buildCommand = "npm run build"
 
 [deploy]
-preDeployCommand = "npm install --include=dev && npm run db:push"
+preDeployCommand = "mkdir -p /app/data && npm install --include=dev && npm run db:push"
 startCommand = "NODE_ENV=production node dist/index.cjs"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
