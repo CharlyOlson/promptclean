@@ -2,7 +2,7 @@
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "NODE_ENV=production node dist/index.cjs"
+startCommand = "mkdir -p /app/data && NODE_ENV=production node dist/index.cjs"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
