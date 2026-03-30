@@ -1,5 +1,5 @@
 [build]
-buildCommand = "npm run build && npm run db:generate"
+buildCommand = "npm run build"
 
 [deploy]
 startCommand = "NODE_ENV=production node dist/index.cjs"

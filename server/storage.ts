@@ -5,7 +5,7 @@ import { desc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 
-const dbUrl = process.env.DATABASE_URL ?? "/app/data/data.db";
+const dbUrl = process.env.DATABASE_URL ?? "data.db";
 
 // Ensure the directory exists before opening the database. The volume is
 // mounted before the app process starts, so this runs after the mount and
@@ -19,8 +19,15 @@ sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite);
 
-// Create the schema on startup using CREATE TABLE IF NOT EXISTS so it is safe
-// to run on every deploy — subsequent runs simply skip table creation.
+// ─── Schema ownership ────────────────────────────────────────────────────────
+// storage.ts is the single source of truth for initial schema creation.
+// Drizzle migration files (./migrations) are NOT used at runtime; drizzle-kit
+// is kept only as a dev tool for inspecting or generating one-off SQL.
+// Table creation uses CREATE TABLE IF NOT EXISTS so every deploy is idempotent.
+// To evolve the schema, use an idempotent, versioned migration mechanism
+// (for example, Drizzle migrations applied out-of-band) rather than adding
+// raw ALTER TABLE statements here, so startup remains safe to run on every deploy.
+// ─────────────────────────────────────────────────────────────────────────────
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS cleanups (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
