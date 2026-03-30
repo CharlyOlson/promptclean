@@ -4,6 +4,17 @@ import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import type { WeightedAnswer } from "@shared/schema";
 
+// ── Session type augmentation ─────────────────────────────────────────────────
+declare module "express-session" {
+  interface SessionData {
+    runs: number;
+    isPro: boolean;
+    firstRunAt?: string;
+  }
+}
+
+const FREE_RUN_LIMIT = 5;
+
 // Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
@@ -194,6 +205,13 @@ export async function registerRoutes(
           .json({ message: "Failed to parse questions" });
       }
 
+      // ── Track usage per session ──
+      const runs = (req.session.runs ?? 0) + 1;
+      req.session.runs = runs;
+      if (!req.session.firstRunAt) {
+        req.session.firstRunAt = new Date().toISOString();
+      }
+
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
@@ -338,6 +356,31 @@ export async function registerRoutes(
 
   app.get("/api/health", (_req, res) => {
     return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
+  });
+
+  app.get("/api/usage", (req, res) => {
+    const runs = req.session.runs ?? 0;
+    const isPro = req.session.isPro ?? false;
+
+    if (runs > 0 && !req.session.firstRunAt) {
+      req.session.firstRunAt = new Date().toISOString();
+    }
+
+    const resetAt = req.session.firstRunAt
+      ? new Date(
+          new Date(req.session.firstRunAt).getTime() + 7 * 24 * 60 * 60 * 1000,
+        ).toISOString()
+      : undefined;
+
+    return res.json({
+      runs,
+      limit: FREE_RUN_LIMIT,
+      isPro,
+      remaining: isPro ? null : Math.max(0, FREE_RUN_LIMIT - runs),
+      resetAt,
+      monthlyLimit: 100,
+      monthlyRemaining: isPro ? Math.max(0, 100 - runs) : null,
+    });
   });
 
   app.get("/api/history", async (_req, res) => {

@@ -1,4 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -8,6 +10,12 @@ if (!process.env.GEMINI_API_KEY) {
     "WARNING: GEMINI_API_KEY is not set. Gemini calls will fail until you add it to your .env (local) or Railway Variables (production).",
   );
   // Do NOT process.exit(1); we still want the server to start.
+}
+
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
+  console.warn(
+    "WARNING: SESSION_SECRET is not set in production. Set SESSION_SECRET in Railway Variables to secure user sessions.",
+  );
 }
 
 const app = express();
@@ -37,6 +45,22 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+const SessionStore = MemoryStore(session);
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET ?? "promptclean-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+    store: new SessionStore({ checkPeriod: 86_400_000 }),
+  }),
+);
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

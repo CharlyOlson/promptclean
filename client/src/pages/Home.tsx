@@ -6,6 +6,8 @@ import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight } from "lucide-re
 import type { Cleanup, WeightedAnswer } from "@shared/schema";
 import QuestionCard from "@/components/QuestionCard";
 import type { OptionState, QuestionOption } from "@/components/QuestionCard";
+import PromptControls, { type PromptConfig } from "@/components/PromptControls";
+import PaywallBanner from "@/components/PaywallBanner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
@@ -351,6 +353,11 @@ export default function Home() {
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [activeNode, setActiveNode] = useState(-1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [config, setConfig] = useState<PromptConfig>({
+    promptType: "general",
+    model: "gpt-4o",
+    length: "medium",
+  });
 
   // ── Step 1: fetch questions ─────────────────────────────────────────────────
   const questionsMutation = useMutation({
@@ -373,6 +380,7 @@ export default function Home() {
       }, 600);
     },
     onSuccess: (data) => {
+      window.dispatchEvent(new Event("promptclean:usage-refresh"));
       if (intervalRef.current) clearInterval(intervalRef.current);
       setActiveNode(-1);
       setQuestions(data.questions);
@@ -388,7 +396,10 @@ export default function Home() {
       setWeightedState({});
       setStage("questions");
     },
-    onError: (err: Error) => {
+    onError: (err: any) => {
+      if (err?.status === 402 || err?.response?.status === 402) {
+        window.dispatchEvent(new Event("promptclean:usage-refresh"));
+      }
       if (intervalRef.current) clearInterval(intervalRef.current);
       setActiveNode(-1);
       setStage("input");
@@ -432,7 +443,10 @@ export default function Home() {
   const handleRunNodes = () => {
     if (!prompt.trim()) return;
     setStage("input"); // reset
-    questionsMutation.mutate(prompt.trim());
+    const enriched =
+      `${prompt.trim()}\n\n` +
+      `[Prompt type: ${config.promptType} | Target model: ${config.model} | Output length: ${config.length}]`;
+    questionsMutation.mutate(enriched);
   };
 
   const handleFinalize = () => {
@@ -502,14 +516,23 @@ export default function Home() {
           <button onClick={handleReset} className="focus:outline-none" aria-label="Reset">
             <Logo />
           </button>
-          <button
-            onClick={toggle}
-            data-testid="theme-toggle"
-            className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
-            aria-label="Toggle theme"
-          >
-            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href="#/welcome"
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors px-2 py-1"
+              aria-label="How to use PromptClean"
+            >
+              Help
+            </a>
+            <button
+              onClick={toggle}
+              data-testid="theme-toggle"
+              className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+              aria-label="Toggle theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -518,6 +541,9 @@ export default function Home() {
         {/* ── Stage: Input ── */}
         {(stage === "input" || stage === "questions") && (
           <div className="mb-2">
+            {/* ─ Usage gauge (free pips or pro clock) ─ */}
+            <PaywallBanner />
+
             <label
               htmlFor="raw-signal"
               className="block font-display text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2"
@@ -535,6 +561,9 @@ export default function Home() {
                 placeholder:text-muted-foreground/50 resize-none focus:outline-none focus:ring-2
                 focus:ring-primary/40 transition-shadow"
             />
+
+            {/* ─ Prompt settings ─ */}
+            <PromptControls value={config} onChange={setConfig} />
           </div>
         )}
 
