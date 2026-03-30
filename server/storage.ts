@@ -20,11 +20,13 @@ sqlite.pragma("foreign_keys = ON");
 export const db = drizzle(sqlite);
 
 // ─── Schema ownership ────────────────────────────────────────────────────────
-// storage.ts is the single source of truth for schema creation.
+// storage.ts is the single source of truth for initial schema creation.
 // Drizzle migration files (./migrations) are NOT used at runtime; drizzle-kit
 // is kept only as a dev tool for inspecting or generating one-off SQL.
 // Table creation uses CREATE TABLE IF NOT EXISTS so every deploy is idempotent.
-// To evolve the schema, add a new ALTER TABLE … statement below this block.
+// To evolve the schema, use an idempotent, versioned migration mechanism
+// (for example, Drizzle migrations applied out-of-band) rather than adding
+// raw ALTER TABLE statements here, so startup remains safe to run on every deploy.
 // ─────────────────────────────────────────────────────────────────────────────
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS cleanups (
