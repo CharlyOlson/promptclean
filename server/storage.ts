@@ -5,7 +5,7 @@ import { desc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 
-const dbUrl = process.env.DATABASE_URL ?? "/app/data/data.db";
+const dbUrl = process.env.DATABASE_URL ?? "data.db";
 
 // Ensure the directory exists before opening the database. The volume is
 // mounted before the app process starts, so this runs after the mount and
