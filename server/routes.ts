@@ -73,20 +73,30 @@ Types:
 
 Output format (STRICT):
 
-Return ONLY a JSON array:
+Return ONLY a valid JSON array. No Markdown, no comments, no prose outside the JSON.
+
+Field rules:
+- "id": sequential string ("q1", "q2", …).
+- "node": one of "alpha", "beta", or "gamma".
+- "type": one of "choice", "text", or "weighted-choice".
+- "options": include ONLY for "choice" or "weighted-choice" types; 2–5 string options max. Omit entirely for "text".
+
+Example (valid JSON):
 [
   {
     "id": "q1",
-    "node": "alpha" | "beta" | "gamma",
-    "question": "the question text",
-    "type": "choice" | "text" | "weighted-choice",
-    "options": ["option 1", "option 2", ...] // ONLY for choice or weighted-choice, 2–5 options max
+    "node": "beta",
+    "question": "Who is the target audience?",
+    "type": "choice",
+    "options": ["beginners", "intermediate developers", "senior engineers"]
+  },
+  {
+    "id": "q2",
+    "node": "gamma",
+    "question": "What will you do with the output?",
+    "type": "text"
   }
-]
-
-- No Markdown.
-- No comments.
-- No prose outside valid JSON.`;
+]`;
 
 const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine running the chain:
 
@@ -125,17 +135,18 @@ Return a JSON object with EXACTLY this structure:
     ]
   },
   "delta": {
-    "specificity": <0-25 integer — score the ORIGINAL prompt's specificity before fixes>,
-    "context": <0-25 integer — how much real-world or task context the ORIGINAL had>,
-    "constraints": <0-25 integer — how well the ORIGINAL pinned down limits (length, budget, tools, timing, etc.)>,
-    "outputDef": <0-25 integer — how clearly the ORIGINAL defined output format (length, style, medium, structure)>,
+    "specificity": 8,
+    "context": 5,
+    "constraints": 3,
+    "outputDef": 4,
     "comment": "one sentence: what the original was missing, and what the clarifications + cleanup resolved."
   }
 }
 
-Scoring rules:
+Delta scoring rules:
+- Each of the four delta scores (specificity, context, constraints, outputDef) is an integer from 0 to 25.
 - Score ONLY the ORIGINAL prompt, not your rewrite.
-- Most bad prompts should land between 20–50 total (sum of the four 0–25 scores).
+- Most bad prompts should land between 20–50 total (sum of the four scores).
 - Do NOT inflate. 80+ should be reserved for expert-level prompts that almost do not need you.
 
 Clarifying answers:
