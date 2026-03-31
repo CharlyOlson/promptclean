@@ -467,7 +467,7 @@ export default function Home() {
     setStage("input"); // reset
     const enriched =
       `${prompt.trim()}\n\n` +
-      `[Prompt type: ${config.promptType} | Target model: ${config.model} | Output length: ${config.length}]`;
+      `[Target model: ${config.model} | Output length: ${config.length} | Type: ${config.promptType}]`;
     questionsMutation.mutate(enriched);
   };
 
