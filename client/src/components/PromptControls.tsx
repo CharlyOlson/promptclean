@@ -28,7 +28,7 @@
  *   // Home.tsx appends a one-line metadata suffix derived from `config`
  *   // (prompt type, target model, output length, etc.) to the raw prompt,
  *   // e.g.:
- *   //   const enriched = `${prompt.trim()}\n\n` + /* metadata suffix from config */;
+ *   //   const enriched = `${prompt.trim()}\n\n` + metadataSuffix;
  *   //   // send `enriched` instead of `prompt`
  */
 
