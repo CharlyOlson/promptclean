@@ -143,14 +143,26 @@ export default function PromptControls({ value, onChange }: Props) {
         {LENGTHS.map((l) => {
           const isActive = value.length === l.id;
           // Bar heights: short = all short, medium = tall middle, long = ascending
-          let bar1H = "h-1.5";
-          let bar2H = "h-1.5";
-          let bar3H = "h-1.5";
-          if (l.id === "medium") {
-            bar2H = "h-3.5";
+          let bar1H: string;
+          let bar2H: string;
+          let bar3H: string;
+          if (l.id === "short") {
+            bar1H = "h-1.5";
+            bar2H = "h-1.5";
+            bar3H = "h-1.5";
+          } else if (l.id === "medium") {
+            bar1H = "h-1.5";
+            bar2H = "h-3.5"; // tall middle
+            bar3H = "h-1.5";
           } else if (l.id === "long") {
+            bar1H = "h-1.5";
             bar2H = "h-3.5";
-            bar3H = "h-5";
+            bar3H = "h-5";   // ascending
+          } else {
+            // Fallback to short pattern for any unexpected id
+            bar1H = "h-1.5";
+            bar2H = "h-1.5";
+            bar3H = "h-1.5";
           }
           return (
             <button
