@@ -23,12 +23,13 @@
  * sent to /api/questions, so Gemini can factor in the target model and
  * desired output length when generating cleanup questions.
  *
- * Append pattern (in Home.tsx handleRunNodes):
+ * Append behavior (implemented in Home.tsx handleRunNodes):
  *
- *   const enriched =
- *     `${prompt.trim()}\n\n` +
- *     `[Prompt type: ${config.promptType} | Target model: ${config.model} | Output length: ${config.length}]`;
- *   // send `enriched` instead of `prompt`
+ *   // Home.tsx appends a one-line metadata suffix derived from `config`
+ *   // (prompt type, target model, output length, etc.) to the raw prompt,
+ *   // e.g.:
+ *   //   const enriched = `${prompt.trim()}\n\n` + /* metadata suffix from config */;
+ *   //   // send `enriched` instead of `prompt`
  */
 
 import type { ReactNode } from "react";
