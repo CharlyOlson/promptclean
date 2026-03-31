@@ -2,8 +2,8 @@
  * PromptControls.tsx
  *
  * Three selector strips that sit above the prompt input:
- *   1. Prompt Type  — what the user wants the AI to produce
- *   2. GPT Model    — which AI they will paste the result into
+ *   1. Prompt Type   — what the user wants the AI to produce
+ *   2. Target Model  — which AI they will paste the result into
  *   3. Output Length — short / medium / long
  *
  * Usage in Home.tsx:
