@@ -1,6 +1,6 @@
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
 
-function FirstRunGuard({ children }: { children: React.ReactNode }) {
+function FirstRunGuard({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   useEffect(() => {
     if (location === "/") {
