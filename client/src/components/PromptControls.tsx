@@ -142,10 +142,16 @@ export default function PromptControls({ value, onChange }: Props) {
       <ControlSection label="Output Length">
         {LENGTHS.map((l) => {
           const isActive = value.length === l.id;
-          // Bar heights: short = all short, medium = mid bar taller, long = all tall
-          const bar1H = "h-2";
-          const bar2H = l.id === "short" ? "h-1" : "h-3.5";
-          const bar3H = l.id === "long" ? "h-5" : "h-1.5";
+          // Bar heights: short = all short, medium = tall middle, long = ascending
+          let bar1H = "h-1.5";
+          let bar2H = "h-1.5";
+          let bar3H = "h-1.5";
+          if (l.id === "medium") {
+            bar2H = "h-3.5";
+          } else if (l.id === "long") {
+            bar2H = "h-3.5";
+            bar3H = "h-5";
+          }
           return (
             <button
               key={l.id}
