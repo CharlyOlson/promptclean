@@ -1,11 +1,13 @@
 import { useLocation } from "wouter";
 
+const PC_SEEN_WELCOME_KEY = "pc_seen_welcome";
+
 export default function Welcome() {
   const [, navigate] = useLocation();
 
   function handleDismiss() {
     try {
-      localStorage.setItem("pc_seen_welcome", "1");
+      localStorage.setItem(PC_SEEN_WELCOME_KEY, "1");
     } catch {
       // localStorage blocked — continue anyway
     }
