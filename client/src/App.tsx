@@ -10,14 +10,14 @@ import Welcome from "@/pages/Welcome";
 import { useEffect } from "react";
 
 function FirstVisitGuard() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   useEffect(() => {
     try {
-      if (!localStorage.getItem("pc_seen_welcome")) {
+      if (location === "/" && !localStorage.getItem("pc_seen_welcome")) {
         navigate("/welcome");
       }
     } catch {}
-  }, [navigate]);
+  }, [location, navigate]);
   return null;
 }
 
