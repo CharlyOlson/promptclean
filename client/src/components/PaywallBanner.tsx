@@ -34,12 +34,10 @@ async function fetchUsage(): Promise<UsageData> {
 }
 
 async function startCheckout(): Promise<void> {
-  const res = await fetch("/api/create-checkout-session", { method: "POST", credentials: "include" });
-  if (!res.ok) throw new Error("checkout failed");
-  const { url } = await res.json();
-  if (url) window.location.href = url;
+  // The `/api/create-checkout-session` endpoint is not implemented in this repository.
+  // To avoid a guaranteed 404/500, we currently fail gracefully instead of calling it.
+  window.alert("Upgrading is not available right now. Please try again later.");
 }
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysUntil(isoTimestamp: string): number {
   const now = Date.now();
