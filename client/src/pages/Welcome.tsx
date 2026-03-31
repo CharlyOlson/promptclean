@@ -1,6 +1,5 @@
 import { useLocation } from "wouter";
-
-const PC_SEEN_WELCOME_KEY = "pc_seen_welcome";
+import { PC_SEEN_WELCOME_KEY } from "@/lib/constants";
 
 export default function Welcome() {
   const [, navigate] = useLocation();

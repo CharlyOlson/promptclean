@@ -1,4 +1,7 @@
 import { Switch, Route, Router, useLocation } from "wouter";
+// useHashLocation makes all URLs /#/-prefixed, which is required for Railway
+// deployments where no server-side SPA fallback is configured. Do not switch to
+// the default browser-history hook without also setting up server-side fallback.
 import { useHashLocation } from "wouter/use-hash-location";
 import { useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
@@ -8,6 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
+import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
 /**
  * Redirects first-time visitors to /welcome.
@@ -19,7 +23,7 @@ function FirstVisitGuard() {
 
   useEffect(() => {
     try {
-      const seen = localStorage.getItem("pc_seen_welcome");
+      const seen = localStorage.getItem(PC_SEEN_WELCOME_KEY);
       if (!seen && location === "/") {
         navigate("/welcome", { replace: true });
       }
