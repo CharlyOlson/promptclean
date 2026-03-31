@@ -19,6 +19,13 @@ function daysUntil(isoDate: string): number {
 export default function PaywallBanner() {
   const { data, refetch } = useQuery<UsageData>({
     queryKey: ["/api/usage"],
+    queryFn: async (): Promise<UsageData> => {
+      const res = await fetch("/api/usage", { credentials: "include" });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch usage: ${res.status} ${res.statusText}`);
+      }
+      return res.json() as Promise<UsageData>;
+    },
     staleTime: 30_000,
   });
 
