@@ -1,6 +1,6 @@
 import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,12 +17,11 @@ function RootGate() {
     shouldRedirect =
       location === "/" && !localStorage.getItem("pc_seen_welcome");
   } catch {
-    shouldRedirect = location === "/";
+    shouldRedirect = false;
   }
 
   useEffect(() => {
     if (shouldRedirect) {
-      // true = replace, avoids back-button loop
       navigate("/welcome", true);
     }
   }, [shouldRedirect, navigate]);
@@ -32,16 +31,13 @@ function RootGate() {
   return <Home />;
 }
 
-function AppRouter({ children }: { children?: ReactNode }) {
+function AppRouter() {
   return (
-    <>
-      {children}
-      <Switch>
-        <Route path="/" component={RootGate} />
-        <Route path="/welcome" component={Welcome} />
-        <Route component={NotFound} />
-      </Switch>
-    </>
+    <Switch>
+      <Route path="/" component={RootGate} />
+      <Route path="/welcome" component={Welcome} />
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
