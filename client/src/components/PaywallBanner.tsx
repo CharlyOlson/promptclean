@@ -280,6 +280,7 @@ export default function PaywallBanner() {
       await startCheckout();
     } catch (err) {
       console.error("[PaywallBanner] Checkout failed:", err);
+    } finally {
       setLoading(false);
     }
   };
