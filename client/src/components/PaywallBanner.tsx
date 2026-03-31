@@ -266,7 +266,9 @@ export default function PaywallBanner() {
       refresh();
       params.delete("payment");
       const newSearch = params.toString();
-      window.history.replaceState({}, "", newSearch ? `?${newSearch}` : "/");
+      const { pathname, hash } = window.location;
+      const newUrl = pathname + (newSearch ? `?${newSearch}` : "") + hash;
+      window.history.replaceState({}, "", newUrl);
     }
   }, [refresh]);
 
