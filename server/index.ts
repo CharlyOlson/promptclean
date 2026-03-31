@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import { randomBytes } from "crypto";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -12,11 +13,20 @@ if (!process.env.GEMINI_API_KEY) {
   // Do NOT process.exit(1); we still want the server to start.
 }
 
-if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
-  console.warn(
-    "WARNING: SESSION_SECRET is not set in production. Set SESSION_SECRET in Railway Variables to secure user sessions.",
-  );
-}
+// Resolve the session secret.  In production a missing secret generates a
+// random one (sessions are invalidated on restart) and logs a loud warning.
+// This is still far safer than a well-known hard-coded fallback string.
+const SESSION_SECRET: string = (() => {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === "production") {
+    const randomSecret = randomBytes(32).toString("hex");
+    console.warn(
+      "WARNING: SESSION_SECRET is not set in production. A random secret has been generated for this startup — all sessions will be invalidated on every restart. Set SESSION_SECRET in Railway Variables to fix this.",
+    );
+    return randomSecret;
+  }
+  return "promptclean-dev-secret";
+})();
 
 const app = express();
 const httpServer = createServer(app);
@@ -71,16 +81,31 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 const SessionStore = MemoryStore(session);
+
+// Warn in production: the in-memory store does not survive restarts or scale-out.
+// For reliable quota enforcement across restarts/instances, migrate to a shared
+// store such as Redis (connect-redis).
+if (process.env.NODE_ENV === "production") {
+  console.warn(
+    "WARNING: Session store is in-memory. Run metering will reset on server restart and will be inconsistent across multiple instances. Configure a shared store (e.g. Redis) for reliable quota enforcement.",
+  );
+}
+
+// Use sameSite:"none" (requires secure) when ALLOWED_ORIGIN points to a
+// different domain so the session cookie is sent on cross-site fetch requests.
+// Fall back to "lax" for same-origin setups (no ALLOWED_ORIGIN configured).
+const isCrossOrigin = Boolean(ALLOWED_ORIGIN);
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET ?? "promptclean-dev-secret",
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     proxy: true,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: isCrossOrigin ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     store: new SessionStore({ checkPeriod: 86_400_000 }),
