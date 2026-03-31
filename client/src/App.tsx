@@ -21,7 +21,7 @@ function FirstVisitGuard() {
     try {
       const seen = localStorage.getItem("pc_seen_welcome");
       if (!seen && location === "/") {
-        navigate("/welcome");
+        navigate("/welcome", { replace: true });
       }
     } catch {
       // localStorage blocked (private browsing etc.) — just show Home
