@@ -92,7 +92,7 @@ function Chip({ label, active, onClick }: ChipProps) {
 
 interface SectionProps {
   label: string;
-  children: React.ReactNode;
+  children: any;
 }
 
 function ControlSection({ label, children }: SectionProps) {
