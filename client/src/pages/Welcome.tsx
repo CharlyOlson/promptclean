@@ -15,6 +15,7 @@
 
 import { useLocation } from "wouter";
 import { Zap, Target, Layers, ArrowRight } from "lucide-react";
+import { PC_SEEN_WELCOME_KEY } from "@/lib/onboarding";
 
 const TIPS = [
   {
@@ -45,7 +46,7 @@ export default function Welcome() {
   const [, navigate] = useLocation();
 
   function dismiss() {
-    try { localStorage.setItem("pc_seen_welcome", "1"); } catch {}
+    try { localStorage.setItem(PC_SEEN_WELCOME_KEY, "1"); } catch {}
     navigate("/");
   }
 
