@@ -9,7 +9,7 @@
  *
  * Covers:
  *   - What PromptClean is
- *   - How to use it (3 steps)
+ *   - How to use it (4 steps)
  *   - How to get the best results (3 tips)
  */
 
