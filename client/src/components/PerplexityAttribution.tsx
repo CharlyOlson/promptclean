@@ -7,7 +7,7 @@ export function PerplexityAttribution() {
         rel="noopener noreferrer"
         className="hover:text-foreground transition-colors"
       >
-        Created with Perplexity Computer
+        Created with Perp 
       </a>
     </footer>
   );
