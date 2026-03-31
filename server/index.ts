@@ -21,6 +21,10 @@ if (!process.env.SESSION_SECRET && process.env.NODE_ENV === "production") {
 const app = express();
 const httpServer = createServer(app);
 
+// Trust Railway's TLS-terminating proxy so req.secure is correct and
+// cookie.secure works properly in production.
+app.set("trust proxy", 1);
+
 // CORS — allow requests from Perplexity hosted frontend and any origin during dev
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -52,6 +56,7 @@ app.use(
     secret: process.env.SESSION_SECRET ?? "promptclean-dev-secret",
     resave: false,
     saveUninitialized: false,
+    proxy: true,
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,

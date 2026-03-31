@@ -185,6 +185,30 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
+      // ── Enforce free-tier quota ──
+      const isPro = req.session.isPro ?? false;
+      if (!isPro) {
+        const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        let runs = req.session.runs ?? 0;
+        const firstRunAt = req.session.firstRunAt
+          ? new Date(req.session.firstRunAt).getTime()
+          : null;
+
+        // Reset window if 7 days have elapsed since first run
+        if (firstRunAt && now >= firstRunAt + ONE_WEEK_MS) {
+          runs = 0;
+          req.session.runs = 0;
+          req.session.firstRunAt = undefined;
+        }
+
+        if (runs >= FREE_RUN_LIMIT) {
+          return res.status(402).json({
+            message: "Free quota exhausted. Upgrade to Pro or wait for your weekly reset.",
+          });
+        }
+      }
+
       const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
 
       const response = await generateWithRetry(input, QUESTIONS_MODEL);
@@ -359,17 +383,31 @@ export async function registerRoutes(
   });
 
   app.get("/api/usage", (req, res) => {
-    const runs = req.session.runs ?? 0;
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    let runs = req.session.runs ?? 0;
     const isPro = req.session.isPro ?? false;
 
-    if (runs > 0 && !req.session.firstRunAt) {
-      req.session.firstRunAt = new Date().toISOString();
+    let firstRunAt: Date | null = req.session.firstRunAt
+      ? new Date(req.session.firstRunAt)
+      : null;
+
+    // Reset window if 7 days have elapsed since first run
+    if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
+      runs = 0;
+      req.session.runs = 0;
+      firstRunAt = null;
+      req.session.firstRunAt = undefined;
     }
 
-    const resetAt = req.session.firstRunAt
-      ? new Date(
-          new Date(req.session.firstRunAt).getTime() + 7 * 24 * 60 * 60 * 1000,
-        ).toISOString()
+    // Record start time when there is usage but no recorded start time
+    if (runs > 0 && !firstRunAt) {
+      firstRunAt = now;
+      req.session.firstRunAt = now.toISOString();
+    }
+
+    const resetAt = firstRunAt
+      ? new Date(firstRunAt.getTime() + ONE_WEEK_MS).toISOString()
       : undefined;
 
     return res.json({
