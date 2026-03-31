@@ -156,6 +156,7 @@ export default function PromptControls({ value, onChange }: Props) {
             <button
               key={l.id}
               type="button"
+              aria-pressed={isActive}
               onClick={() => onChange({ ...value, length: l.id })}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border
                 transition-all duration-150
