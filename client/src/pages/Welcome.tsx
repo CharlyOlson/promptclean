@@ -2,19 +2,16 @@
  * Welcome.tsx
  *
  * Shown once when a user hits the app for the first time.
- * Dismissed by clicking "Let's go" — sets localStorage key "pc_seen_welcome".
+ * Dismissed by clicking "Let's go" — sets localStorage key PC_SEEN_WELCOME_KEY.
  * After dismiss, navigates to "/" (Home).
  *
- * To re-trigger in dev: localStorage.removeItem("pc_seen_welcome")
- *
- * Covers:
- *   - What PromptClean is
- *   - How to use it (4 steps)
- *   - How to get the best results (3 tips)
+ * To re-trigger in dev:
+ * localStorage.removeItem("pc_seen_welcome")
  */
 
 import { useLocation } from "wouter";
 import { Zap, Target, Layers, ArrowRight } from "lucide-react";
+import { PC_SEEN_WELCOME_KEY } from "../constants";
 
 const TIPS = [
   {
@@ -62,10 +59,11 @@ export default function Welcome() {
 
   function dismiss() {
     try {
-      localStorage.setItem("pc_seen_welcome", "1");
+      localStorage.setItem(PC_SEEN_WELCOME_KEY, "1");
     } catch {
       // ignore storage errors
     }
+
     navigate("/", true);
   }
 
@@ -192,9 +190,7 @@ export default function Welcome() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            <span className="text-foreground font-medium">
-              3 free cleanups
-            </span>{" "}
+            <span className="text-foreground font-medium">3 free cleanups</span>{" "}
             to start. Upgrade to Pro for unlimited runs at $9/month.
           </p>
         </div>
