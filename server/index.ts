@@ -25,9 +25,26 @@ const httpServer = createServer(app);
 // cookie.secure works properly in production.
 app.set("trust proxy", 1);
 
-// CORS — allow requests from Perplexity hosted frontend and any origin during dev
+// CORS — restrict to the configured allowed origin (or same-origin in production).
+// When credentials are used, Allow-Origin must be a specific origin, not "*".
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "";
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin ?? "";
+  const isDev = process.env.NODE_ENV !== "production";
+
+  // Allow the request if:
+  //  • an explicit ALLOWED_ORIGIN is configured and matches, OR
+  //  • we're in development (any localhost/127 origin is fine)
+  const isAllowed =
+    (ALLOWED_ORIGIN && origin === ALLOWED_ORIGIN) ||
+    (isDev && (origin === "" || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)));
+
+  if (isAllowed || origin === "") {
+    // Echo the request origin back — required when credentials are involved
+    if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.sendStatus(204);
