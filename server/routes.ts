@@ -393,18 +393,19 @@ export async function registerRoutes(
       ? new Date(req.session.firstRunAt)
       : null;
 
-    // If the existing window has expired, reset usage and start a new window.
+    // If the existing window has expired, reset usage and clear the window start.
     if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
       runs = 0;
       req.session.runs = 0;
-      firstRunAt = now;
-      req.session.firstRunAt = now.toISOString();
+      firstRunAt = null;
+      delete req.session.firstRunAt;
     }
 
     // Initialize the window start when there is usage but no recorded start time.
     if (runs > 0 && !firstRunAt) {
-      firstRunAt = now;
-      req.session.firstRunAt = now.toISOString();
+      const windowStart = now;
+      firstRunAt = windowStart;
+      req.session.firstRunAt = windowStart.toISOString();
     }
 
     const resetAt = firstRunAt
