@@ -10,15 +10,15 @@ import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
 
 function AppRouter() {
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   useEffect(() => {
     try {
-      if (!localStorage.getItem("pc_seen_welcome")) {
+      if (!localStorage.getItem("pc_seen_welcome") && location !== "/welcome") {
         navigate("/welcome");
       }
     } catch {}
-  }, [navigate]);
+  }, [location, navigate]);
 
   return (
     <Switch>
