@@ -8,20 +8,27 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
+import { PC_SEEN_WELCOME_KEY } from "./constants";
 
+/**
+ * Guards the root route: first-time visitors go to /welcome.
+ * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
+ */
 function RootGate() {
   const [location, navigate] = useLocation();
 
   let shouldRedirect = false;
   try {
     shouldRedirect =
-      location === "/" && !localStorage.getItem("pc_seen_welcome");
+      location === "/" && !localStorage.getItem(PC_SEEN_WELCOME_KEY);
   } catch {
+    // If storage is blocked, don't force welcome.
     shouldRedirect = false;
   }
 
   useEffect(() => {
     if (shouldRedirect) {
+      // true = replace; avoids back-button loop into welcome
       navigate("/welcome", true);
     }
   }, [shouldRedirect, navigate]);
@@ -46,6 +53,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
+        {/*
+          Hash routing is intentional.
+          This deploy target doesn’t guarantee server-side SPA fallback
+          for deep links, so useHashLocation avoids refresh/direct-link 404s.
+        */}
         <Router hook={useHashLocation}>
           <AppRouter />
         </Router>
