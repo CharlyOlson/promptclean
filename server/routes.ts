@@ -4,6 +4,17 @@ import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import type { WeightedAnswer } from "@shared/schema";
 
+// ── Session type augmentation ─────────────────────────────────────────────────
+declare module "express-session" {
+  interface SessionData {
+    runs?: number;
+    isPro?: boolean;
+    firstRunAt?: string;
+  }
+}
+
+const FREE_RUN_LIMIT = 5;
+
 // Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
@@ -174,6 +185,30 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
+      // ── Enforce free-tier quota ──
+      const isPro = req.session.isPro ?? false;
+      if (!isPro) {
+        const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        let runs = req.session.runs ?? 0;
+        const firstRunAt = req.session.firstRunAt
+          ? new Date(req.session.firstRunAt).getTime()
+          : null;
+
+        // Reset window if 7 days have elapsed since first run
+        if (firstRunAt && now >= firstRunAt + ONE_WEEK_MS) {
+          runs = 0;
+          req.session.runs = 0;
+          req.session.firstRunAt = undefined;
+        }
+
+        if (runs >= FREE_RUN_LIMIT) {
+          return res.status(402).json({
+            message: "Free quota exhausted. Upgrade to Pro or wait for your weekly reset.",
+          });
+        }
+      }
+
       const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
 
       const response = await generateWithRetry(input, QUESTIONS_MODEL);
@@ -192,6 +227,13 @@ export async function registerRoutes(
         return res
           .status(500)
           .json({ message: "Failed to parse questions" });
+      }
+
+      // ── Track usage per session ──
+      const runs = (req.session.runs ?? 0) + 1;
+      req.session.runs = runs;
+      if (!req.session.firstRunAt) {
+        req.session.firstRunAt = new Date().toISOString();
       }
 
       return res.json({ questions });
@@ -338,6 +380,47 @@ export async function registerRoutes(
 
   app.get("/api/health", (_req, res) => {
     return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
+  });
+
+  app.get("/api/usage", (req, res) => {
+    let runs = req.session.runs ?? 0;
+    const isPro = req.session.isPro ?? false;
+
+    const now = new Date();
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+    let firstRunAt: Date | null = req.session.firstRunAt
+      ? new Date(req.session.firstRunAt)
+      : null;
+
+    // If the existing window has expired, reset usage and clear the window start.
+    if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
+      runs = 0;
+      req.session.runs = 0;
+      firstRunAt = null;
+      delete req.session.firstRunAt;
+    }
+
+    // Initialize the window start when there is usage but no recorded start time.
+    if (runs > 0 && !firstRunAt) {
+      const windowStart = now;
+      firstRunAt = windowStart;
+      req.session.firstRunAt = windowStart.toISOString();
+    }
+
+    const resetAt = firstRunAt
+      ? new Date(firstRunAt.getTime() + ONE_WEEK_MS).toISOString()
+      : undefined;
+
+    return res.json({
+      runs,
+      limit: FREE_RUN_LIMIT,
+      isPro,
+      remaining: isPro ? null : Math.max(0, FREE_RUN_LIMIT - runs),
+      resetAt,
+      monthlyLimit: 100,
+      monthlyRemaining: isPro ? Math.max(0, 100 - runs) : null,
+    });
   });
 
   app.get("/api/history", async (_req, res) => {
