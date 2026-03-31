@@ -133,7 +133,7 @@ export default function Welcome() {
         {/* Free tier info */}
         <div className="rounded-lg border border-border bg-card/50 px-4 py-3 flex items-center gap-3">
           <div className="flex gap-1.5">
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3, 4].map((i) => (
               <span
                 key={i}
                 className="w-3 h-3 rounded-full bg-emerald-400/80 border border-emerald-500/50"
@@ -141,7 +141,7 @@ export default function Welcome() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            <span className="text-foreground font-medium">3 free cleanups</span> to start.
+            <span className="text-foreground font-medium">5 free cleanups</span> to start.
             Upgrade to Pro for unlimited runs at $9/month.
           </p>
         </div>
