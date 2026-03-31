@@ -9,7 +9,7 @@ export default function Welcome() {
     } catch {
       // localStorage blocked — continue anyway
     }
-    navigate("/");
+    navigate("/", { replace: true });
   }
 
   return (
