@@ -27,7 +27,7 @@
  *
  *   const enriched =
  *     `${prompt.trim()}\n\n` +
- *     `[Target model: ${config.model} | Output length: ${config.length} | Type: ${config.promptType}]`;
+ *     `[Prompt type: ${config.promptType} | Target model: ${config.model} | Output length: ${config.length}]`;
  *   // send `enriched` instead of `prompt`
  */
 
