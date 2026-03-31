@@ -31,12 +31,9 @@
  *   // send `enriched` instead of `prompt`
  */
 
-export interface PromptConfig {
-  promptType: string;
-  model: string;
-  length: "short" | "medium" | "long";
-}
+import type { ReactNode } from "react";
 
+// Defined before PromptConfig so the interface can derive its union types from these arrays.
 const PROMPT_TYPES = [
   { id: "general",    label: "General" },
   { id: "code",       label: "Code" },
@@ -46,7 +43,7 @@ const PROMPT_TYPES = [
   { id: "summarize",  label: "Summarize" },
   { id: "email",      label: "Email" },
   { id: "image",      label: "Image" },
-];
+] as const;
 
 const MODELS = [
   { id: "gpt-4o",           label: "GPT-4o" },
@@ -59,7 +56,13 @@ const MODELS = [
   { id: "llama-3",          label: "Llama 3" },
   { id: "mistral",          label: "Mistral" },
   { id: "perplexity",       label: "Perplexity" },
-];
+] as const;
+
+export interface PromptConfig {
+  promptType: typeof PROMPT_TYPES[number]["id"];
+  model: typeof MODELS[number]["id"];
+  length: "short" | "medium" | "long";
+}
 
 const LENGTHS: { id: PromptConfig["length"]; label: string; desc: string }[] = [
   { id: "short",  label: "Short",  desc: "~100 words" },
@@ -92,7 +95,7 @@ function Chip({ label, active, onClick }: ChipProps) {
 
 interface SectionProps {
   label: string;
-  children: any;
+  children: ReactNode;
 }
 
 function ControlSection({ label, children }: SectionProps) {
