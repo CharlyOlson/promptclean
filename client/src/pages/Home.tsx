@@ -397,7 +397,29 @@ export default function Home() {
       setStage("questions");
     },
     onError: (err: any) => {
-      if (err?.status === 402 || err?.response?.status === 402) {
+      let status: number | undefined =
+        typeof err?.status === "number"
+          ? err.status
+          : typeof err?.response?.status === "number"
+            ? err.response.status
+            : undefined;
+
+      // Fallback: derive status from error message like "402: ..."
+      if (
+        status === undefined &&
+        err &&
+        typeof err.message === "string"
+      ) {
+        const match = err.message.match(/^(\d{3})\b/);
+        if (match) {
+          const parsed = parseInt(match[1], 10);
+          if (!Number.isNaN(parsed)) {
+            status = parsed;
+          }
+        }
+      }
+
+      if (status === 402) {
         window.dispatchEvent(new Event("promptclean:usage-refresh"));
       }
       if (intervalRef.current) clearInterval(intervalRef.current);
