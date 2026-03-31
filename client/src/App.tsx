@@ -17,6 +17,7 @@ function RootGate() {
     shouldRedirect =
       location === "/" && !localStorage.getItem("pc_seen_welcome");
   } catch {
+    // If storage is blocked, don't force the welcome flow.
     shouldRedirect = false;
   }
 
@@ -46,6 +47,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
+        {/*
+          Hash routing is intentional.
+          This deployment target does not guarantee server-side SPA fallback
+          for deep links, so using useHashLocation avoids refresh/direct-link 404s.
+        */}
         <Router hook={useHashLocation}>
           <AppRouter />
         </Router>
@@ -55,4 +61,3 @@ function App() {
 }
 
 export default App;
-
