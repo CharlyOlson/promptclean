@@ -42,7 +42,10 @@ app.use((req, res, next) => {
 
   if (isAllowed || origin === "") {
     // Echo the request origin back — required when credentials are involved
-    if (origin) res.setHeader("Access-Control-Allow-Origin", origin);
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.append("Vary", "Origin");
+    }
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
