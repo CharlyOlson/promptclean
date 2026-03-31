@@ -78,6 +78,7 @@ function Chip({ label, active, onClick }: ChipProps) {
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
         ${active
           ? "bg-primary text-primary-foreground border-primary shadow-sm"
