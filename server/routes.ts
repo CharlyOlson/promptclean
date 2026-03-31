@@ -359,17 +359,32 @@ export async function registerRoutes(
   });
 
   app.get("/api/usage", (req, res) => {
-    const runs = req.session.runs ?? 0;
+    let runs = req.session.runs ?? 0;
     const isPro = req.session.isPro ?? false;
 
-    if (runs > 0 && !req.session.firstRunAt) {
-      req.session.firstRunAt = new Date().toISOString();
+    const now = new Date();
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+    let firstRunAt: Date | null = req.session.firstRunAt
+      ? new Date(req.session.firstRunAt)
+      : null;
+
+    // If the existing window has expired, reset usage and start a new window.
+    if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
+      runs = 0;
+      req.session.runs = 0;
+      firstRunAt = now;
+      req.session.firstRunAt = now.toISOString();
     }
 
-    const resetAt = req.session.firstRunAt
-      ? new Date(
-          new Date(req.session.firstRunAt).getTime() + 7 * 24 * 60 * 60 * 1000,
-        ).toISOString()
+    // Initialize the window start when there is usage but no recorded start time.
+    if (runs > 0 && !firstRunAt) {
+      firstRunAt = now;
+      req.session.firstRunAt = now.toISOString();
+    }
+
+    const resetAt = firstRunAt
+      ? new Date(firstRunAt.getTime() + ONE_WEEK_MS).toISOString()
       : undefined;
 
     return res.json({
