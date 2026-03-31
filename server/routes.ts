@@ -7,8 +7,8 @@ import type { WeightedAnswer } from "@shared/schema";
 // ── Session type augmentation ─────────────────────────────────────────────────
 declare module "express-session" {
   interface SessionData {
-    runs: number;
-    isPro: boolean;
+    runs?: number;
+    isPro?: boolean;
     firstRunAt?: string;
   }
 }
