@@ -22,13 +22,11 @@ function RootGate() {
     shouldRedirect =
       location === "/" && !localStorage.getItem(PC_SEEN_WELCOME_KEY);
   } catch {
-    // If storage is blocked, don't force welcome.
     shouldRedirect = false;
   }
 
   useEffect(() => {
     if (shouldRedirect) {
-      // replace current history entry to avoid a back-button loop
       navigate("/welcome", true);
     }
   }, [shouldRedirect, navigate]);
