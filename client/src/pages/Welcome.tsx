@@ -67,7 +67,7 @@ export default function Welcome() {
     } catch {
       // ignore storage errors
     }
-    navigate("/", true);
+    navigate("/", { replace: true });
   }
 
   return (

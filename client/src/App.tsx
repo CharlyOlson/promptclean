@@ -1,4 +1,6 @@
 import { Switch, Route, Router, useLocation } from "wouter";
+// useHashLocation: required for Railway (no server-side SPA fallback).
+// Switching to browser routing would need a catch-all redirect on the server.
 import { useHashLocation } from "wouter/use-hash-location";
 import { useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -28,8 +30,7 @@ function RootGate() {
 
   useEffect(() => {
     if (shouldRedirect) {
-      // true = replace; avoids back-button loop into welcome
-      navigate("/welcome", true);
+      navigate("/welcome", { replace: true });
     }
   }, [shouldRedirect, navigate]);
 
