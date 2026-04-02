@@ -8,7 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
-import { PC_SEEN_WELCOME_KEY } from "./constants";
+import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
 /**
  * Guards the root route: first-time visitors go to /welcome.

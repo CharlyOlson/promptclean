@@ -14,6 +14,7 @@
  */
 
 import { useLocation } from "wouter";
+import { PC_SEEN_WELCOME_KEY } from "../lib/constants";
 import { Zap, Target, Layers, ArrowRight } from "lucide-react";
 
 const TIPS = [
@@ -62,7 +63,7 @@ export default function Welcome() {
 
   function dismiss() {
     try {
-      localStorage.setItem("pc_seen_welcome", "1");
+      localStorage.setItem(PC_SEEN_WELCOME_KEY, "1");
     } catch {
       // ignore storage errors
     }
