@@ -189,9 +189,17 @@ function ProClockDial({ remaining, total }: { remaining: number; total: number }
     pct > 0.2 ? "hsl(38 85% 52%)" :
                 "hsl(0 72% 51%)";
 
+  const ariaLabel = `Pro usage: ${remaining} of ${total} uses left this month`;
+
   return (
     <div className="flex items-center gap-3">
-      <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
+      <svg
+        width="72"
+        height="72"
+        viewBox="0 0 72 72"
+        role="img"
+        aria-label={ariaLabel}
+      >
         {/* Track */}
         <circle cx={cx} cy={cy} r={R} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
         {/* Filled arc — start at top (−90°) */}
