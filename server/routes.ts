@@ -478,7 +478,10 @@ export async function registerRoutes(
       return res.json({ url: session.url });
     } catch (err: any) {
       console.error("Stripe checkout error:", err);
-      return res.status(500).json({ message: err.message ?? "Checkout failed" });
+      return res.status(500).json({
+        message: "Unable to create checkout session",
+        code: "STRIPE_CHECKOUT_ERROR",
+      });
     }
   });
 
