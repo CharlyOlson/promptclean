@@ -10,16 +10,26 @@ import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
 import { PC_SEEN_WELCOME_KEY } from "@/lib/onboarding";
 
+function needsWelcome(): boolean {
+  try {
+    return !localStorage.getItem(PC_SEEN_WELCOME_KEY);
+  } catch {
+    return false;
+  }
+}
+
 function AppRouter() {
   const [location, navigate] = useLocation();
 
   useLayoutEffect(() => {
-    try {
-      if (!localStorage.getItem(PC_SEEN_WELCOME_KEY) && location !== "/welcome") {
-        navigate("/welcome");
-      }
-    } catch {}
+    if (needsWelcome() && location !== "/welcome") {
+      navigate("/welcome");
+    }
   }, [location, navigate]);
+
+  if (needsWelcome() && location !== "/welcome") {
+    return null;
+  }
 
   return (
     <Switch>
