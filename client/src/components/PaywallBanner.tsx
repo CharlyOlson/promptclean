@@ -48,6 +48,13 @@ async function startCheckout(): Promise<void> {
   window.location.href = url;
 }
 
+async function verifyCheckout(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/verify-checkout?session_id=${encodeURIComponent(sessionId)}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("checkout verification failed");
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysUntil(isoTimestamp: string): number {
   const now = Date.now();
@@ -282,8 +289,16 @@ export default function PaywallBanner() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment") === "success") {
-      refresh();
-      window.history.replaceState({}, "", "/#/");
+      const sessionId = params.get("session_id");
+      const finish = () => {
+        refresh();
+        window.history.replaceState({}, "", "/#/");
+      };
+      if (sessionId) {
+        verifyCheckout(sessionId).then(finish).catch(finish);
+      } else {
+        finish();
+      }
     }
   }, [refresh]);
 

@@ -471,7 +471,8 @@ export async function registerRoutes(
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${baseUrl}/?payment=success`,
+        client_reference_id: req.sessionID,
+        success_url: `${baseUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${baseUrl}/`,
       });
 
@@ -482,6 +483,42 @@ export async function registerRoutes(
         message: "Unable to create checkout session",
         code: "STRIPE_CHECKOUT_ERROR",
       });
+    }
+  });
+
+  app.get("/api/verify-checkout", async (req, res) => {
+    const sessionId = typeof req.query.session_id === "string" ? req.query.session_id : null;
+
+    if (!sessionId) {
+      return res.status(400).json({ message: "session_id is required" });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    try {
+      const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (checkoutSession.client_reference_id !== req.sessionID) {
+        return res.status(403).json({ message: "Session mismatch" });
+      }
+
+      if (checkoutSession.status !== "complete") {
+        return res.status(402).json({ message: "Payment not completed" });
+      }
+
+      req.session.isPro = true;
+      req.session.runs = 0;
+
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve())),
+      );
+
+      return res.json({ isPro: true });
+    } catch (err: any) {
+      console.error("Stripe verify-checkout error:", err);
+      return res.status(500).json({ message: "Unable to verify checkout session" });
     }
   });
 
