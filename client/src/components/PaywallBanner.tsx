@@ -17,13 +17,14 @@ interface UsageData {
   runs: number;
   limit: number;
   isPro: boolean;
-  remaining: number;
+  /** null for Pro users (not applicable) */
+  remaining: number | null;
   /** ISO timestamp of when the free allowance resets (optional — backend may provide) */
   resetAt?: string;
   /** For Pro: total monthly uses included in plan */
   monthlyLimit?: number;
-  /** For Pro: uses remaining this billing period */
-  monthlyRemaining?: number;
+  /** null for free users (not applicable) */
+  monthlyRemaining: number | null;
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -71,7 +72,8 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
   onUpgrade: () => void;
   loading: boolean;
 }) {
-  const exhausted = usage.remaining === 0;
+  const remaining = usage.remaining ?? 0;
+  const exhausted = remaining === 0;
   const resetDays = exhausted ? estimateResetDays(usage) : null;
   const pips = Array.from({ length: usage.limit }, (_, i) => i);
 
@@ -85,11 +87,11 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       role="status"
       aria-label={exhausted
         ? `All free runs used. Resets in ${resetDays} days.`
-        : `${usage.remaining} of ${usage.limit} free runs remaining`
+        : `${remaining} of ${usage.limit} free runs remaining`
       }
     >
       {/* Pip row */}
-      <div className="flex items-center gap-2" title={`${usage.remaining} free runs left`}>
+      <div className="flex items-center gap-2" title={`${remaining} free runs left`}>
         {pips.map((i) => {
           const used = i < usage.runs;
           return (
@@ -152,8 +154,8 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       ) : (
         <>
           <span className="text-xs">
-            <span className="font-medium text-foreground">{usage.remaining}</span>
-            {" "}free {usage.remaining === 1 ? "run" : "runs"} left
+            <span className="font-medium text-foreground">{remaining}</span>
+            {" "}free {remaining === 1 ? "run" : "runs"} left
           </span>
           <button
             onClick={onUpgrade}
