@@ -167,8 +167,8 @@ export default function Welcome() {
           <ArrowRight className="w-4 h-4" />
         </button>
 
+        <p className="text-xs text-center text-muted-foreground mt-2">
           You can revisit this guide anytime by navigating to <code>/welcome</code>.
-          You can revisit this guide anytime from the help link in the header.
         </p>
       </div>
     </div>
