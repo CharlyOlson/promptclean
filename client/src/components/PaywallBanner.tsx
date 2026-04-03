@@ -251,7 +251,7 @@ function ProScorecard({ usage }: { usage: UsageData }) {
       <ProClockDial remaining={remaining} total={monthly} />
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-bold text-foreground">PromptClean Pro</span>
-        <span className="text-[10px] text-muted-foreground">Unlimited monthly cleanups</span>
+        <span className="text-[10px] text-muted-foreground">{monthly} cleanups / month</span>
         <span className="text-[10px] text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           Active subscription
