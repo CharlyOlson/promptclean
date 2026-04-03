@@ -40,7 +40,10 @@ async function startCheckout(): Promise<void> {
   });
   if (!res.ok) throw new Error("checkout failed");
   const { url } = await res.json();
-  if (url) window.location.href = url;
+  if (typeof url !== "string" || !url) {
+    throw new Error("checkout URL missing from response");
+  }
+  window.location.href = url;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
