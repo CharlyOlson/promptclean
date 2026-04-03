@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
+import Stripe from "stripe";
 import type { WeightedAnswer } from "@shared/schema";
 
 // ── Session type augmentation ─────────────────────────────────────────────────
@@ -21,6 +22,11 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 // Use the free‑tier, high‑throughput model
 const QUESTIONS_MODEL = "gemini-2.5-flash";
 const CLEANUP_MODEL = "gemini-2.5-flash";
+
+// Stripe client — only initialized when the secret key is present
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -439,6 +445,34 @@ export async function registerRoutes(
       return res
         .status(500)
         .json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/create-checkout-session", async (req, res) => {
+    const priceId = process.env.STRIPE_PRICE_ID;
+
+    if (!stripe || !priceId) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    if (req.session.isPro) {
+      return res.status(400).json({ message: "Already subscribed" });
+    }
+
+    const origin = req.headers.origin ?? `${req.protocol}://${req.headers.host}`;
+
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: `${origin}/?payment=success`,
+        cancel_url: `${origin}/`,
+      });
+
+      return res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("Stripe checkout error:", err);
+      return res.status(500).json({ message: err.message ?? "Checkout failed" });
     }
   });
 
