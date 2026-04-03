@@ -459,14 +459,20 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Already subscribed" });
     }
 
-    const origin = req.headers.origin ?? `${req.protocol}://${req.headers.host}`;
+    const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+    const host = req.get("host");
+    const baseUrl = configuredBaseUrl ?? (host ? `${req.protocol}://${host}` : undefined);
+
+    if (!baseUrl) {
+      return res.status(500).json({ message: "Application base URL is not configured" });
+    }
 
     try {
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}/?payment=success`,
-        cancel_url: `${origin}/`,
+        success_url: `${baseUrl}/?payment=success`,
+        cancel_url: `${baseUrl}/`,
       });
 
       return res.json({ url: session.url });
