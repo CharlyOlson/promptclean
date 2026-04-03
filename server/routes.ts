@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
 import Stripe from "stripe";
 import type { WeightedAnswer } from "@shared/schema";
+import crypto from "crypto";
 
 // ── Session type augmentation ─────────────────────────────────────────────────
 declare module "express-session" {
@@ -11,15 +12,24 @@ declare module "express-session" {
     runs?: number;
     isPro?: boolean;
     firstRunAt?: string;
+    userId?: string;
   }
+}
+
+// ── Stable anonymous session ID ───────────────────────────────────────────────
+// When OAuth is added later, replace this with the authenticated user's ID.
+// History rows already have user_id so the migration is just a swap here.
+function getSessionUserId(req: any): string {
+  if (!req.session.userId) {
+    req.session.userId = crypto.randomUUID();
+  }
+  return req.session.userId;
 }
 
 const FREE_RUN_LIMIT = 5;
 
-// Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
-// Use the free‑tier, high‑throughput model
 const QUESTIONS_MODEL = "gemini-2.5-flash";
 const CLEANUP_MODEL = "gemini-2.5-flash";
 
@@ -191,7 +201,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // ── Enforce free-tier quota ──
       const isPro = req.session.isPro ?? false;
       if (!isPro) {
         const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -201,7 +210,6 @@ export async function registerRoutes(
           ? new Date(req.session.firstRunAt).getTime()
           : null;
 
-        // Reset window if 7 days have elapsed since first run
         if (firstRunAt && now >= firstRunAt + ONE_WEEK_MS) {
           runs = 0;
           req.session.runs = 0;
@@ -216,7 +224,6 @@ export async function registerRoutes(
       }
 
       const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
-
       const response = await generateWithRetry(input, QUESTIONS_MODEL);
 
       const rawText = response.text ?? "";
@@ -230,12 +237,9 @@ export async function registerRoutes(
         questions = JSON.parse(cleaned);
         if (!Array.isArray(questions)) throw new Error("not array");
       } catch {
-        return res
-          .status(500)
-          .json({ message: "Failed to parse questions" });
+        return res.status(500).json({ message: "Failed to parse questions" });
       }
 
-      // ── Track usage per session ──
       const runs = (req.session.runs ?? 0) + 1;
       req.session.runs = runs;
       if (!req.session.firstRunAt) {
@@ -245,27 +249,20 @@ export async function registerRoutes(
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
-
       const status = error?.status ?? error?.code;
       const msg = error?.message ?? error?.error?.message ?? "";
 
       if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
-          message:
-            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
+          message: "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
         });
       }
-
       if (status === 503 || String(msg).includes("UNAVAILABLE")) {
         return res.status(503).json({
-          message:
-            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
+          message: "The Gemini model is currently overloaded. Please try again in a minute.",
         });
       }
-
-      return res
-        .status(500)
-        .json({ message: msg || "Internal server error" });
+      return res.status(500).json({ message: msg || "Internal server error" });
     }
   });
 
@@ -277,7 +274,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // Build the clarifying-answers block for the AI prompt
       let answersBlock = "";
       if (answers && typeof answers === "object" && Object.keys(answers).length > 0) {
         answersBlock = "\n\nClarifying answers provided by the user:\n" +
@@ -285,7 +281,6 @@ export async function registerRoutes(
             .map(([qid, ans]) => `- ${qid}: ${ans}`)
             .join("\n");
       }
-      // Append structured weighted answers when present
       if (Array.isArray(weightedAnswers) && weightedAnswers.length > 0) {
         answersBlock += "\n\nWeighted preference answers:\n" +
           (weightedAnswers as WeightedAnswer[]).map((wa) => {
@@ -316,9 +311,7 @@ export async function registerRoutes(
       try {
         parsed = JSON.parse(cleaned);
       } catch {
-        return res
-          .status(500)
-          .json({ message: "Failed to parse AI response" });
+        return res.status(500).json({ message: "Failed to parse AI response" });
       }
 
       const score = {
@@ -337,7 +330,9 @@ export async function registerRoutes(
       const changeLog = parsed.gamma?.changeLog ?? [];
       const deltaComment = parsed.delta?.comment ?? "";
 
+      // ── Save cleanup scoped to this session's userId ──────────────────────
       await storage.createCleanup({
+        userId: getSessionUserId(req),
         originalPrompt: prompt.trim(),
         fixedPrompt,
         totalScore: score.total,
@@ -357,30 +352,20 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Cleanup error:", error);
-
       const status = error?.status ?? error?.code;
       const msg = error?.message ?? error?.error?.message ?? "";
 
-      // Gemini quota / rate limit
       if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
-          message:
-            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
+          message: "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
         });
       }
-
-      // Gemini model overloaded / UNAVAILABLE
       if (status === 503 || String(msg).includes("UNAVAILABLE")) {
         return res.status(503).json({
-          message:
-            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
+          message: "The Gemini model is currently overloaded. Please try again in a minute.",
         });
       }
-
-      // Fallback: real server error
-      return res
-        .status(500)
-        .json({ message: msg || "Internal server error" });
+      return res.status(500).json({ message: msg || "Internal server error" });
     }
   });
 
@@ -391,7 +376,6 @@ export async function registerRoutes(
   app.get("/api/usage", (req, res) => {
     let runs = req.session.runs ?? 0;
     const isPro = req.session.isPro ?? false;
-
     const now = new Date();
     const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -399,7 +383,6 @@ export async function registerRoutes(
       ? new Date(req.session.firstRunAt)
       : null;
 
-    // If the existing window has expired, reset usage and clear the window start.
     if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
       runs = 0;
       req.session.runs = 0;
@@ -407,11 +390,9 @@ export async function registerRoutes(
       delete req.session.firstRunAt;
     }
 
-    // Initialize the window start when there is usage but no recorded start time.
     if (runs > 0 && !firstRunAt) {
-      const windowStart = now;
-      firstRunAt = windowStart;
-      req.session.firstRunAt = windowStart.toISOString();
+      firstRunAt = now;
+      req.session.firstRunAt = now.toISOString();
     }
 
     const resetAt = firstRunAt
@@ -429,22 +410,19 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/history", async (_req, res) => {
+  // ── History: only this session's cleanups ─────────────────────────────────
+  app.get("/api/history", async (req, res) => {
     try {
-      const recent = await storage.getRecentCleanups(5);
+      const recent = await storage.getRecentCleanups(getSessionUserId(req), 5);
       return res.json(recent);
     } catch (error: any) {
       const msg = String(error?.message || "");
-
       if (msg.includes("no such table: cleanups")) {
         console.warn("cleanups table not yet initialized — returning empty history");
         return res.json([]);
       }
-
       console.error("History error:", error);
-      return res
-        .status(500)
-        .json({ message: error.message || "Internal server error" });
+      return res.status(500).json({ message: error.message || "Internal server error" });
     }
   });
 
