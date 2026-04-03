@@ -1,8 +1,8 @@
 /**
  * PaywallBanner.tsx
  *
- * Free users  → 3-pip gauge (green = used, grey = remaining)
- *               When all 3 used: pips turn amber, shows day countdown to refill.
+ * Free users  → pip gauge with `usage.limit` pips (green = used, grey = remaining)
+ *               When all free runs are used: pips turn amber, shows day countdown to refill.
  * Pro users   → scorecard clock dial showing uses remaining (subscription).
  *
  * Listens for: window.dispatchEvent(new Event("promptclean:usage-refresh"))
