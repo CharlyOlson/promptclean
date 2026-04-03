@@ -31,7 +31,8 @@ interface UsageData {
 async function fetchUsage(): Promise<UsageData> {
   const res = await fetch("/api/usage", { credentials: "include" });
   if (!res.ok) throw new Error("usage fetch failed");
-  return res.json();
+  const data: UsageData = await res.json();
+  return data;
 }
 
 async function startCheckout(): Promise<void> {
