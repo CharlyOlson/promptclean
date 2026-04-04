@@ -35,7 +35,9 @@ const CLEANUP_MODEL = "gemini-2.5-flash";
 
 // Stripe client — only initialized when the secret key is present
 const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20",
+    })
   : null;
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
