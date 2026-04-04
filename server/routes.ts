@@ -40,6 +40,10 @@ const stripe = process.env.STRIPE_SECRET_KEY
     })
   : null;
 
+// Shared regex patterns used by the checkout CSRF/origin guard
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -441,10 +445,11 @@ export async function registerRoutes(
 
     // CSRF/origin guard — only allow requests from a trusted origin.
     // In production ALLOWED_ORIGIN must be set; in development any localhost origin is fine.
-    // Empty Origin headers (e.g. curl) are rejected — they bypass CSRF protection.
-    const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
-    const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
-    const requestOrigin = req.headers.origin ?? "";
+    // Empty Origin headers (e.g. curl, server-side) are always rejected.
+    const requestOrigin = req.headers.origin;
+    if (!requestOrigin) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
     const isDevelopment = process.env.NODE_ENV !== "production";
     const isOriginTrusted =
