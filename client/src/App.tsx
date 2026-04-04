@@ -41,7 +41,7 @@ function AppRouter() {
 
   useLayoutEffect(() => {
     if (needsWelcome() && location !== "/welcome") {
-      navigate("/welcome");
+      navigate("/welcome", true);
     }
   }, [location, navigate]);
 
