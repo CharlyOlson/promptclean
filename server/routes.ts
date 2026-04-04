@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
+import Stripe from "stripe";
 import type { WeightedAnswer } from "@shared/schema";
 import crypto from "crypto";
 
@@ -31,6 +32,18 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
 const QUESTIONS_MODEL = "gemini-2.5-flash";
 const CLEANUP_MODEL = "gemini-2.5-flash";
+
+// Stripe client — only initialized when the secret key is present
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20",
+    })
+  : null;
+
+// Shared regex patterns used by the checkout CSRF/origin guard
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -417,6 +430,98 @@ export async function registerRoutes(
       }
       console.error("History error:", error);
       return res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/create-checkout-session", async (req, res) => {
+    const priceId = process.env.STRIPE_PRICE_ID;
+
+    if (!stripe || !priceId) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    if (req.session.isPro) {
+      return res.status(400).json({ message: "Already subscribed" });
+    }
+
+    // CSRF/origin guard — only allow requests from a trusted origin.
+    // In production ALLOWED_ORIGIN must be set; in development any localhost origin is fine.
+    // Empty Origin headers (e.g. curl, server-side) are always rejected.
+    const requestOrigin = req.headers.origin;
+    if (!requestOrigin) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
+    const isOriginTrusted =
+      (allowedOrigin && requestOrigin === allowedOrigin) ||
+      (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
+    if (!isOriginTrusted) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+    const host = req.get("host");
+    const isAllowedDevHost = !!host && LOCALHOST_HOST_RE.test(host);
+    const baseUrl =
+      configuredBaseUrl ??
+      (IS_DEVELOPMENT && isAllowedDevHost ? `${req.protocol}://${host}` : undefined);
+
+    if (!baseUrl) {
+      return res.status(500).json({ message: "Application base URL is not configured" });
+    }
+
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        client_reference_id: req.sessionID,
+        success_url: `${baseUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/`,
+      });
+
+      return res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("Stripe checkout error:", err);
+      return res.status(500).json({
+        message: "Unable to create checkout session",
+        code: "STRIPE_CHECKOUT_ERROR",
+      });
+    }
+  });
+
+  app.get("/api/verify-checkout", async (req, res) => {
+    const sessionId = typeof req.query.session_id === "string" ? req.query.session_id : null;
+
+    if (!sessionId) {
+      return res.status(400).json({ message: "session_id is required" });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    try {
+      const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (checkoutSession.client_reference_id !== req.sessionID) {
+        return res.status(403).json({ message: "Session mismatch" });
+      }
+
+      if (checkoutSession.status !== "complete") {
+        return res.status(402).json({ message: "Payment not completed" });
+      }
+
+      req.session.isPro = true;
+      req.session.runs = 0;
+
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve())),
+      );
+
+      return res.json({ isPro: true });
+    } catch (err: any) {
+      console.error("Stripe verify-checkout error:", err);
+      return res.status(500).json({ message: "Unable to verify checkout session" });
     }
   });
 
