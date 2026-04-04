@@ -1,13 +1,8 @@
 /**
  * PaywallBanner.tsx
  *
-<<<<<<< copilot/update-paywall-banner-implementation
  * Free users  → pip gauge with `usage.limit` pips (green = used, grey = remaining)
  *               When all free runs are used: pips turn amber, shows day countdown to refill.
-=======
- * Free users  → 3-pip gauge (green = used, grey = remaining)
- *               When all 3 used: pips turn amber, shows day countdown to refill.
->>>>>>> main
  * Pro users   → scorecard clock dial showing uses remaining (subscription).
  *
  * Listens for: window.dispatchEvent(new Event("promptclean:usage-refresh"))
@@ -22,30 +17,20 @@ interface UsageData {
   runs: number;
   limit: number;
   isPro: boolean;
-<<<<<<< copilot/update-paywall-banner-implementation
   /** null for Pro users (not applicable) */
   remaining: number | null;
-=======
-  remaining: number;
->>>>>>> main
   /** ISO timestamp of when the free allowance resets (optional — backend may provide) */
   resetAt?: string;
   /** For Pro: total monthly uses included in plan */
   monthlyLimit?: number;
-<<<<<<< copilot/update-paywall-banner-implementation
   /** null for free users (not applicable) */
   monthlyRemaining: number | null;
-=======
-  /** For Pro: uses remaining this billing period */
-  monthlyRemaining?: number;
->>>>>>> main
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function fetchUsage(): Promise<UsageData> {
   const res = await fetch("/api/usage", { credentials: "include" });
   if (!res.ok) throw new Error("usage fetch failed");
-<<<<<<< copilot/update-paywall-banner-implementation
   const data: UsageData = await res.json();
   return data;
 }
@@ -88,46 +73,14 @@ function estimateResetDays(usage: UsageData): number {
   // Fallback: show 7 days as placeholder
   return 7;
 }
-
-=======
-  return res.json();
-}
-
-async function startCheckout(): Promise<void> {
-  // The `/api/create-checkout-session` endpoint is not implemented in this repository.
-  // To avoid a guaranteed 404/500, we currently fail gracefully instead of calling it.
-  window.alert("Upgrading is not available right now. Please try again later.");
-}
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function daysUntil(isoTimestamp: string): number {
-  const now = Date.now();
-  const then = new Date(isoTimestamp).getTime();
-  if (isNaN(then) || then <= now) return 0;
-  return Math.ceil((then - now) / (1000 * 60 * 60 * 24));
-}
-
-/**
- * Estimate days until free runs reset.
- * Falls back to "7 days from now" if the backend doesn't send resetAt.
- */
-function estimateResetDays(usage: UsageData): number {
-  if (usage.resetAt) return daysUntil(usage.resetAt);
-  return 7;
-}
-
->>>>>>> main
 // ── Free Pip Gauge ─────────────────────────────────────────────────────────────
 function FreePipGauge({ usage, onUpgrade, loading }: {
   usage: UsageData;
   onUpgrade: () => void;
   loading: boolean;
 }) {
-<<<<<<< copilot/update-paywall-banner-implementation
   const remaining = usage.remaining ?? 0;
   const exhausted = remaining === 0;
-=======
-  const exhausted = usage.remaining === 0;
->>>>>>> main
   const resetDays = exhausted ? estimateResetDays(usage) : null;
   const pips = Array.from({ length: usage.limit }, (_, i) => i);
 
@@ -141,19 +94,11 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       role="status"
       aria-label={exhausted
         ? `All free runs used. Resets in ${resetDays} days.`
-<<<<<<< copilot/update-paywall-banner-implementation
         : `${remaining} of ${usage.limit} free runs remaining`
       }
     >
       {/* Pip row */}
       <div className="flex items-center gap-2" title={`${remaining} free runs left`}>
-=======
-        : `${usage.remaining} of ${usage.limit} free runs remaining`
-      }
-    >
-      {/* Pip row */}
-      <div className="flex items-center gap-2" title={`${usage.remaining} free runs left`}>
->>>>>>> main
         {pips.map((i) => {
           const used = i < usage.runs;
           return (
@@ -216,13 +161,8 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       ) : (
         <>
           <span className="text-xs">
-<<<<<<< copilot/update-paywall-banner-implementation
             <span className="font-medium text-foreground">{remaining}</span>
             {" "}free {remaining === 1 ? "run" : "runs"} left
-=======
-            <span className="font-medium text-foreground">{usage.remaining}</span>
-            {" "}free {usage.remaining === 1 ? "run" : "runs"} left
->>>>>>> main
           </span>
           <button
             onClick={onUpgrade}
@@ -258,7 +198,6 @@ function ProClockDial({ remaining, total }: { remaining: number; total: number }
     pct > 0.2 ? "hsl(38 85% 52%)" :
                 "hsl(0 72% 51%)";
 
-<<<<<<< copilot/update-paywall-banner-implementation
   const ariaLabel = `Pro usage: ${remaining} of ${total} uses left this month`;
 
   return (
@@ -270,11 +209,6 @@ function ProClockDial({ remaining, total }: { remaining: number; total: number }
         role="img"
         aria-label={ariaLabel}
       >
-=======
-  return (
-    <div className="flex items-center gap-3">
-      <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
->>>>>>> main
         {/* Track */}
         <circle cx={cx} cy={cy} r={R} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
         {/* Filled arc — start at top (−90°) */}
@@ -326,11 +260,7 @@ function ProScorecard({ usage }: { usage: UsageData }) {
       <ProClockDial remaining={remaining} total={monthly} />
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-bold text-foreground">PromptClean Pro</span>
-<<<<<<< copilot/update-paywall-banner-implementation
         <span className="text-[10px] text-muted-foreground">{monthly} cleanups / month</span>
-=======
-        <span className="text-[10px] text-muted-foreground">Unlimited monthly cleanups</span>
->>>>>>> main
         <span className="text-[10px] text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           Active subscription
@@ -346,13 +276,9 @@ export default function PaywallBanner() {
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(() => {
-<<<<<<< copilot/update-paywall-banner-implementation
-    fetchUsage().then(setUsage).catch(() => {});
-=======
     fetchUsage().then(setUsage).catch((err) => {
       console.error("[PaywallBanner] Failed to fetch usage:", err);
     });
->>>>>>> main
   }, []);
 
   useEffect(() => {
@@ -364,7 +290,6 @@ export default function PaywallBanner() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment") === "success") {
-<<<<<<< copilot/update-paywall-banner-implementation
       const sessionId = params.get("session_id");
       const finish = () => {
         refresh();
@@ -375,14 +300,6 @@ export default function PaywallBanner() {
       } else {
         finish();
       }
-=======
-      refresh();
-      params.delete("payment");
-      const newSearch = params.toString();
-      const { pathname, hash } = window.location;
-      const newUrl = pathname + (newSearch ? `?${newSearch}` : "") + hash;
-      window.history.replaceState({}, "", newUrl);
->>>>>>> main
     }
   }, [refresh]);
 
@@ -390,9 +307,6 @@ export default function PaywallBanner() {
 
   const handleUpgrade = async () => {
     setLoading(true);
-<<<<<<< copilot/update-paywall-banner-implementation
-    try { await startCheckout(); } catch { setLoading(false); }
-=======
     try {
       await startCheckout();
     } catch (err) {
@@ -400,7 +314,6 @@ export default function PaywallBanner() {
     } finally {
       setLoading(false);
     }
->>>>>>> main
   };
 
   if (usage.isPro) {
