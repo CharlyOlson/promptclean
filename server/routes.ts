@@ -43,6 +43,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
 // Shared regex patterns used by the checkout CSRF/origin guard
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -451,10 +452,9 @@ export async function registerRoutes(
       return res.status(403).json({ message: "Forbidden" });
     }
     const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
-    const isDevelopment = process.env.NODE_ENV !== "production";
     const isOriginTrusted =
       (allowedOrigin && requestOrigin === allowedOrigin) ||
-      (isDevelopment && LOCALHOST_ORIGIN_RE.test(requestOrigin));
+      (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
     if (!isOriginTrusted) {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -464,7 +464,7 @@ export async function registerRoutes(
     const isAllowedDevHost = !!host && LOCALHOST_HOST_RE.test(host);
     const baseUrl =
       configuredBaseUrl ??
-      (isDevelopment && isAllowedDevHost ? `${req.protocol}://${host}` : undefined);
+      (IS_DEVELOPMENT && isAllowedDevHost ? `${req.protocol}://${host}` : undefined);
 
     if (!baseUrl) {
       return res.status(500).json({ message: "Application base URL is not configured" });
