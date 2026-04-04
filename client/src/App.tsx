@@ -37,6 +37,18 @@ function RootGate() {
 }
 
 function AppRouter() {
+  const [location, navigate] = useLocation();
+
+  useLayoutEffect(() => {
+    if (needsWelcome() && location !== "/welcome") {
+      navigate("/welcome", true);
+    }
+  }, [location, navigate]);
+
+  if (needsWelcome() && location !== "/welcome") {
+    return null;
+  }
+
   return (
     <Switch>
       <Route path="/" component={RootGate} />
