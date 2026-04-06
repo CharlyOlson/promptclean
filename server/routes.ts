@@ -50,7 +50,8 @@ const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
 
 /**
  * Validates that the request `Origin` header is trusted.
- * Returns a 403/500 JSON response on failure, or `null` when the origin is trusted.
+ * Returns `true` when the origin is trusted; on failure, sends a 403/500 JSON
+ * response and returns `void`.
  * Intended to be used as a CSRF guard on state-mutating checkout endpoints.
  */
 function checkOriginTrust(
