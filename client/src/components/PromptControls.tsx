@@ -79,6 +79,7 @@ function Chip({ label, active, onClick }: ChipProps) {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
         ${active
@@ -99,10 +100,19 @@ interface SectionProps {
 function ControlSection({ label, children }: SectionProps) {
   return (
     <div className="space-y-1.5">
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+      <span
+        id={`ctrl-label-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70"
+      >
         {label}
       </span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      <div
+        role="group"
+        aria-labelledby={`ctrl-label-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        className="flex flex-wrap gap-1.5"
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -145,6 +155,7 @@ export default function PromptControls({ value, onChange }: Props) {
           <button
             key={l.id}
             type="button"
+            aria-pressed={value.length === l.id}
             onClick={() => onChange({ ...value, length: l.id })}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border
               transition-all duration-150
