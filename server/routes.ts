@@ -445,21 +445,38 @@ export async function registerRoutes(
     }
 
     // CSRF/origin guard — only allow requests from a trusted origin.
-    // In production ALLOWED_ORIGIN must be set; in development any localhost origin is fine.
+    // In production, trust ALLOWED_ORIGIN when set, otherwise fall back to APP_BASE_URL origin.
     // Empty Origin headers (e.g. curl, server-side) are always rejected.
     const requestOrigin = req.headers.origin;
     if (!requestOrigin) {
       return res.status(403).json({ message: "Forbidden" });
     }
+
     const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
+    const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+    let configuredBaseOrigin: string | undefined;
+
+    if (configuredBaseUrl) {
+      try {
+        configuredBaseOrigin = new URL(configuredBaseUrl).origin;
+      } catch {
+        return res.status(500).json({ message: "Application base URL is invalid" });
+      }
+    }
+
+    if (!IS_DEVELOPMENT && !allowedOrigin && !configuredBaseOrigin) {
+      return res.status(500).json({
+        message: "Allowed origin is not configured",
+      });
+    }
+
     const isOriginTrusted =
       (allowedOrigin && requestOrigin === allowedOrigin) ||
+      (!allowedOrigin && !!configuredBaseOrigin && requestOrigin === configuredBaseOrigin) ||
       (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
     if (!isOriginTrusted) {
       return res.status(403).json({ message: "Forbidden" });
     }
-
-    const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
     const host = req.get("host");
     const isAllowedDevHost = !!host && LOCALHOST_HOST_RE.test(host);
     const baseUrl =
