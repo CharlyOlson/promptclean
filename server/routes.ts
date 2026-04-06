@@ -589,6 +589,7 @@ export async function registerRoutes(
       delete req.session.checkoutToken;
       req.session.isPro = true;
       req.session.runs = 0;
+      delete req.session.firstRunAt;
 
       await new Promise<void>((resolve, reject) =>
         req.session.save((err) => (err ? reject(err) : resolve())),
