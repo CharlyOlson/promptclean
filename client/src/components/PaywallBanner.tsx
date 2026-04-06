@@ -277,6 +277,7 @@ function ProScorecard({ usage }: { usage: UsageData }) {
 export default function PaywallBanner() {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState(false);
 
   const refresh = useCallback(() => {
     fetchUsage().then(setUsage).catch((err) => {
@@ -294,8 +295,7 @@ export default function PaywallBanner() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment") === "success") {
       const sessionId = params.get("session_id");
-      const finish = () => {
-        refresh();
+      const cleanUrl = () => {
         const nextParams = new URLSearchParams(window.location.search);
         nextParams.delete("payment");
         nextParams.delete("session_id");
@@ -307,14 +307,40 @@ export default function PaywallBanner() {
         window.history.replaceState({}, "", nextUrl);
       };
       if (sessionId) {
-        verifyCheckout(sessionId).then(finish).catch(finish);
+        verifyCheckout(sessionId)
+          .then(() => {
+            cleanUrl();
+            refresh();
+          })
+          .catch((err) => {
+            console.error("[PaywallBanner] Verification failed:", err);
+            // Leave session_id in the URL so the user can reload to retry.
+            setVerifyError(true);
+          });
       } else {
-        finish();
+        cleanUrl();
+        refresh();
       }
     }
   }, [refresh]);
 
   if (!usage) return null;
+
+  if (verifyError) {
+    return (
+      <div className="rounded-lg border border-amber-500/60 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-4 mb-4">
+        <span className="text-xs text-amber-400">
+          Payment verification failed. Reload the page to retry.
+        </span>
+        <button
+          onClick={() => window.location.reload()}
+          className="text-xs text-amber-400 underline shrink-0"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   const handleUpgrade = async () => {
     setLoading(true);
