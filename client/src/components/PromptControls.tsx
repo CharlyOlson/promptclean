@@ -81,7 +81,8 @@ function Chip({ label, active, onClick }: ChipProps) {
   return (
     <button
       type="button"
-      aria-pressed={active}
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
         ${active
@@ -96,16 +97,22 @@ function Chip({ label, active, onClick }: ChipProps) {
 
 interface SectionProps {
   label: string;
+  groupId: string;
   children: ReactNode;
 }
 
-function ControlSection({ label, children }: SectionProps) {
+function ControlSection({ label, groupId, children }: SectionProps) {
   return (
-    <div className="space-y-1.5" role="group" aria-label={label}>
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+    <div className="space-y-1.5">
+      <span
+        id={groupId}
+        className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70"
+      >
         {label}
       </span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      <div role="radiogroup" aria-labelledby={groupId} className="flex flex-wrap gap-1.5">
+        {children}
+      </div>
     </div>
   );
 }
@@ -119,7 +126,7 @@ export default function PromptControls({ value, onChange }: Props) {
   return (
     <div className="rounded-lg border border-border bg-card/50 px-4 py-3 space-y-3 mb-3">
       {/* Row 1 — Prompt Type */}
-      <ControlSection label="Prompt Type">
+      <ControlSection label="Prompt Type" groupId="ctrl-prompt-type">
         {PROMPT_TYPES.map((t) => (
           <Chip
             key={t.id}
@@ -131,7 +138,7 @@ export default function PromptControls({ value, onChange }: Props) {
       </ControlSection>
 
       {/* Row 2 — Target Model */}
-      <ControlSection label="Target Model">
+      <ControlSection label="Target Model" groupId="ctrl-target-model">
         {MODELS.map((m) => (
           <Chip
             key={m.id}
@@ -143,7 +150,7 @@ export default function PromptControls({ value, onChange }: Props) {
       </ControlSection>
 
       {/* Row 3 — Output Length */}
-      <ControlSection label="Output Length">
+      <ControlSection label="Output Length" groupId="ctrl-output-length">
         {LENGTHS.map((l) => {
           const isActive = value.length === l.id;
           // Bar heights visualise output length: short = flat, medium = bell, long = ascending
@@ -167,7 +174,8 @@ export default function PromptControls({ value, onChange }: Props) {
             <button
               key={l.id}
               type="button"
-              aria-pressed={isActive}
+              role="radio"
+              aria-checked={isActive}
               onClick={() => onChange({ ...value, length: l.id })}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border
                 transition-all duration-150
