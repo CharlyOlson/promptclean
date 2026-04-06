@@ -2,10 +2,10 @@
  * Welcome.tsx
  *
  * Shown once when a user hits the app for the first time.
- * Dismissed by clicking "Let's go" — sets localStorage key "pc_seen_welcome".
+ * Dismissed by clicking "Let's go" — sets the PC_SEEN_WELCOME_KEY flag in localStorage.
  * After dismiss, navigates to "/" (Home).
  *
- * To re-trigger in dev: localStorage.removeItem("pc_seen_welcome")
+ * To re-trigger in dev: localStorage.removeItem(PC_SEEN_WELCOME_KEY)
  *
  * Covers:
  *   - What PromptClean is
