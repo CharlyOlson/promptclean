@@ -16,7 +16,7 @@ import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
  * Guards the root route: first-time visitors go to /welcome.
  * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
  */
-function RootGate() {
+function FirstVisitGuard() {
   const [location, navigate] = useLocation();
 
   let shouldRedirect = false;
@@ -42,7 +42,7 @@ function RootGate() {
 function AppRouter() {
   return (
     <Switch>
-      <Route path="/" component={RootGate} />
+      <Route path="/" component={FirstVisitGuard} />
       <Route path="/welcome" component={Welcome} />
       <Route component={NotFound} />
     </Switch>
