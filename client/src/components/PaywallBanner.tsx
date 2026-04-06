@@ -49,8 +49,11 @@ async function startCheckout(): Promise<void> {
 }
 
 async function verifyCheckout(sessionId: string): Promise<void> {
-  const res = await fetch(`/api/verify-checkout?session_id=${encodeURIComponent(sessionId)}`, {
+  const res = await fetch("/api/verify-checkout", {
+    method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
   });
   if (!res.ok) throw new Error("checkout verification failed");
 }

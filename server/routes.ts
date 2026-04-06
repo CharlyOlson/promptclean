@@ -13,6 +13,9 @@ declare module "express-session" {
     isPro?: boolean;
     firstRunAt?: string;
     userId?: string;
+    /** One-time token stored when creating a Stripe Checkout Session.
+     *  Passed as `client_reference_id`; validated and cleared on verify. */
+    checkoutToken?: string;
   }
 }
 
@@ -44,6 +47,52 @@ const stripe = process.env.STRIPE_SECRET_KEY
 const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
+
+/**
+ * Validates that the request `Origin` header is trusted.
+ * Returns a 403/500 JSON response on failure, or `null` when the origin is trusted.
+ * Intended to be used as a CSRF guard on state-mutating checkout endpoints.
+ */
+function checkOriginTrust(
+  req: import("express").Request,
+  res: import("express").Response,
+): true | void {
+  const requestOrigin = req.headers.origin;
+  if (!requestOrigin) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
+  const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+  let configuredBaseOrigin: string | undefined;
+
+  if (configuredBaseUrl) {
+    try {
+      configuredBaseOrigin = new URL(configuredBaseUrl).origin;
+    } catch {
+      res.status(500).json({ message: "Application base URL is invalid" });
+      return;
+    }
+  }
+
+  if (!IS_DEVELOPMENT && !allowedOrigin && !configuredBaseOrigin) {
+    res.status(500).json({ message: "Allowed origin is not configured" });
+    return;
+  }
+
+  const isTrusted =
+    (allowedOrigin && requestOrigin === allowedOrigin) ||
+    (!allowedOrigin && !!configuredBaseOrigin && requestOrigin === configuredBaseOrigin) ||
+    (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
+
+  if (!isTrusted) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  return true;
+}
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -444,39 +493,10 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Already subscribed" });
     }
 
-    // CSRF/origin guard — only allow requests from a trusted origin.
-    // In production, trust ALLOWED_ORIGIN when set, otherwise fall back to APP_BASE_URL origin.
-    // Empty Origin headers (e.g. curl, server-side) are always rejected.
-    const requestOrigin = req.headers.origin;
-    if (!requestOrigin) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
+    // CSRF/origin guard
+    if (!checkOriginTrust(req, res)) return;
 
-    const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
     const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
-    let configuredBaseOrigin: string | undefined;
-
-    if (configuredBaseUrl) {
-      try {
-        configuredBaseOrigin = new URL(configuredBaseUrl).origin;
-      } catch {
-        return res.status(500).json({ message: "Application base URL is invalid" });
-      }
-    }
-
-    if (!IS_DEVELOPMENT && !allowedOrigin && !configuredBaseOrigin) {
-      return res.status(500).json({
-        message: "Allowed origin is not configured",
-      });
-    }
-
-    const isOriginTrusted =
-      (allowedOrigin && requestOrigin === allowedOrigin) ||
-      (!allowedOrigin && !!configuredBaseOrigin && requestOrigin === configuredBaseOrigin) ||
-      (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
-    if (!isOriginTrusted) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
     const host = req.get("host");
     const isAllowedDevHost = !!host && LOCALHOST_HOST_RE.test(host);
     const baseUrl =
@@ -488,10 +508,18 @@ export async function registerRoutes(
     }
 
     try {
+      // Use a one-time random token as client_reference_id so the actual
+      // session ID is never sent to Stripe (dashboard / logs / webhooks).
+      const checkoutToken = crypto.randomUUID();
+      req.session.checkoutToken = checkoutToken;
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve())),
+      );
+
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        client_reference_id: req.sessionID,
+        client_reference_id: checkoutToken,
         success_url: `${baseUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${baseUrl}/`,
       });
@@ -506,8 +534,8 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/verify-checkout", async (req, res) => {
-    const sessionId = typeof req.query.session_id === "string" ? req.query.session_id : null;
+  app.post("/api/verify-checkout", async (req, res) => {
+    const sessionId = typeof req.body?.session_id === "string" ? req.body.session_id : null;
 
     if (!sessionId) {
       return res.status(400).json({ message: "session_id is required" });
@@ -517,10 +545,19 @@ export async function registerRoutes(
       return res.status(503).json({ message: "Payments not configured" });
     }
 
+    // CSRF/origin guard
+    if (!checkOriginTrust(req, res)) return;
+
+    // Validate the one-time checkout token stored in the session.
+    const checkoutToken = req.session.checkoutToken;
+    if (!checkoutToken) {
+      return res.status(403).json({ message: "No pending checkout" });
+    }
+
     try {
       const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
 
-      if (checkoutSession.client_reference_id !== req.sessionID) {
+      if (checkoutSession.client_reference_id !== checkoutToken) {
         return res.status(403).json({ message: "Session mismatch" });
       }
 
@@ -546,6 +583,9 @@ export async function registerRoutes(
       if (!hasSettledPayment && !hasActiveSubscription) {
         return res.status(402).json({ message: "Payment not yet settled" });
       }
+
+      // Clear the one-time token before granting Pro access.
+      delete req.session.checkoutToken;
       req.session.isPro = true;
       req.session.runs = 0;
 
