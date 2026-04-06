@@ -2,10 +2,11 @@
  * Welcome.tsx
  *
  * Shown once when a user hits the app for the first time.
- * Dismissed by clicking "Let's go" — sets the PC_SEEN_WELCOME_KEY flag in localStorage.
+ * Dismissed by clicking "Let's go" — sets localStorage key PC_SEEN_WELCOME_KEY.
  * After dismiss, navigates to "/" (Home).
  *
- * To re-trigger in dev: localStorage.removeItem(PC_SEEN_WELCOME_KEY)
+ * To re-trigger in dev:
+ * localStorage.removeItem("pc_seen_welcome")
  *
  * Covers:
  *   - What PromptClean is
@@ -16,6 +17,7 @@
 import { useLocation } from "wouter";
 import { PC_SEEN_WELCOME_KEY } from "../lib/constants";
 import { Zap, Target, Layers, ArrowRight } from "lucide-react";
+import { PC_SEEN_WELCOME_KEY } from "../constants";
 
 const TIPS = [
   {
@@ -184,7 +186,7 @@ export default function Welcome() {
 
         <div className="rounded-lg border border-border bg-card/50 px-4 py-3 flex items-center gap-3">
           <div className="flex gap-1.5">
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3, 4].map((i) => (
               <span
                 key={i}
                 className="w-3 h-3 rounded-full bg-emerald-400/80 border border-emerald-500/50"
@@ -193,9 +195,7 @@ export default function Welcome() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            <span className="text-foreground font-medium">
-              3 free cleanups
-            </span>{" "}
+            <span className="text-foreground font-medium">5 free cleanups</span>{" "}
             to start. Upgrade to Pro for unlimited runs at $9/month.
           </p>
         </div>

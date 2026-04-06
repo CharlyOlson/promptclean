@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const cleanups = sqliteTable("cleanups", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").notNull(),
   originalPrompt: text("original_prompt").notNull(),
   fixedPrompt: text("fixed_prompt").notNull(),
   totalScore: integer("total_score").notNull(),
@@ -18,17 +19,16 @@ export type Cleanup = typeof cleanups.$inferSelect;
 export type OptionId = string;
 
 export interface Option {
-  id: OptionId;        // "A", "B", "C", "D"
-  label: string;       // "A.", "B.", etc.
-  text: string;        // the option text shown to the user
+  id: OptionId;
+  label: string;
+  text: string;
   selected: boolean;
-  weight: number;      // 0–100, only meaningful if selected
-  isCustom?: boolean;  // true for the "type your own" option
+  weight: number;
+  isCustom?: boolean;
 }
 
-/** Serialisable snapshot of a weighted multi-select answer */
 export interface WeightedAnswer {
   questionId: string;
   selections: { optionId: OptionId; text: string; weight: number }[];
-  customText?: string; // populated when the user typed a custom option
+  customText?: string;
 }

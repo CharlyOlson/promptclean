@@ -2,7 +2,9 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
+import Stripe from "stripe";
 import type { WeightedAnswer } from "@shared/schema";
+import crypto from "crypto";
 
 // ── Session type augmentation ─────────────────────────────────────────────────
 declare module "express-session" {
@@ -10,17 +12,88 @@ declare module "express-session" {
     runs?: number;
     isPro?: boolean;
     firstRunAt?: string;
+    userId?: string;
+    /** One-time token stored when creating a Stripe Checkout Session.
+     *  Passed as `client_reference_id`; validated and cleared on verify. */
+    checkoutToken?: string;
   }
+}
+
+// ── Stable anonymous session ID ───────────────────────────────────────────────
+// When OAuth is added later, replace this with the authenticated user's ID.
+// History rows already have user_id so the migration is just a swap here.
+function getSessionUserId(req: any): string {
+  if (!req.session.userId) {
+    req.session.userId = crypto.randomUUID();
+  }
+  return req.session.userId;
 }
 
 const FREE_RUN_LIMIT = 5;
 
-// Gemini client — reads GEMINI_API_KEY from env
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
-// Use the free‑tier, high‑throughput model
 const QUESTIONS_MODEL = "gemini-2.5-flash";
 const CLEANUP_MODEL = "gemini-2.5-flash";
+
+// Stripe client — only initialized when the secret key is present
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2024-06-20",
+    })
+  : null;
+
+// Shared regex patterns used by the checkout CSRF/origin guard
+const LOCALHOST_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const LOCALHOST_HOST_RE = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+const IS_DEVELOPMENT = process.env.NODE_ENV !== "production";
+
+/**
+ * Validates that the request `Origin` header is trusted.
+ * Returns `true` when the origin is trusted; on failure, sends a 403/500 JSON
+ * response and returns `void`.
+ * Intended to be used as a CSRF guard on state-mutating checkout endpoints.
+ */
+function checkOriginTrust(
+  req: import("express").Request,
+  res: import("express").Response,
+): true | void {
+  const requestOrigin = req.headers.origin;
+  if (!requestOrigin) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "";
+  const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+  let configuredBaseOrigin: string | undefined;
+
+  if (configuredBaseUrl) {
+    try {
+      configuredBaseOrigin = new URL(configuredBaseUrl).origin;
+    } catch {
+      res.status(500).json({ message: "Application base URL is invalid" });
+      return;
+    }
+  }
+
+  if (!IS_DEVELOPMENT && !allowedOrigin && !configuredBaseOrigin) {
+    res.status(500).json({ message: "Allowed origin is not configured" });
+    return;
+  }
+
+  const isTrusted =
+    (allowedOrigin && requestOrigin === allowedOrigin) ||
+    (!allowedOrigin && !!configuredBaseOrigin && requestOrigin === configuredBaseOrigin) ||
+    (IS_DEVELOPMENT && LOCALHOST_ORIGIN_RE.test(requestOrigin));
+
+  if (!isTrusted) {
+    res.status(403).json({ message: "Forbidden" });
+    return;
+  }
+
+  return true;
+}
 
 async function generateWithRetry(input: string, model: string, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -185,7 +258,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // ── Enforce free-tier quota ──
       const isPro = req.session.isPro ?? false;
       if (!isPro) {
         const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -195,7 +267,6 @@ export async function registerRoutes(
           ? new Date(req.session.firstRunAt).getTime()
           : null;
 
-        // Reset window if 7 days have elapsed since first run
         if (firstRunAt && now >= firstRunAt + ONE_WEEK_MS) {
           runs = 0;
           req.session.runs = 0;
@@ -210,7 +281,6 @@ export async function registerRoutes(
       }
 
       const input = `${QUESTIONS_SYSTEM}\n\nRaw prompt: "${prompt.trim()}"`;
-
       const response = await generateWithRetry(input, QUESTIONS_MODEL);
 
       const rawText = response.text ?? "";
@@ -224,12 +294,9 @@ export async function registerRoutes(
         questions = JSON.parse(cleaned);
         if (!Array.isArray(questions)) throw new Error("not array");
       } catch {
-        return res
-          .status(500)
-          .json({ message: "Failed to parse questions" });
+        return res.status(500).json({ message: "Failed to parse questions" });
       }
 
-      // ── Track usage per session ──
       const runs = (req.session.runs ?? 0) + 1;
       req.session.runs = runs;
       if (!req.session.firstRunAt) {
@@ -239,27 +306,20 @@ export async function registerRoutes(
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
-
       const status = error?.status ?? error?.code;
       const msg = error?.message ?? error?.error?.message ?? "";
 
       if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
-          message:
-            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
+          message: "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
         });
       }
-
       if (status === 503 || String(msg).includes("UNAVAILABLE")) {
         return res.status(503).json({
-          message:
-            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
+          message: "The Gemini model is currently overloaded. Please try again in a minute.",
         });
       }
-
-      return res
-        .status(500)
-        .json({ message: msg || "Internal server error" });
+      return res.status(500).json({ message: msg || "Internal server error" });
     }
   });
 
@@ -271,7 +331,6 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Prompt is required" });
       }
 
-      // Build the clarifying-answers block for the AI prompt
       let answersBlock = "";
       if (answers && typeof answers === "object" && Object.keys(answers).length > 0) {
         answersBlock = "\n\nClarifying answers provided by the user:\n" +
@@ -279,7 +338,6 @@ export async function registerRoutes(
             .map(([qid, ans]) => `- ${qid}: ${ans}`)
             .join("\n");
       }
-      // Append structured weighted answers when present
       if (Array.isArray(weightedAnswers) && weightedAnswers.length > 0) {
         answersBlock += "\n\nWeighted preference answers:\n" +
           (weightedAnswers as WeightedAnswer[]).map((wa) => {
@@ -310,9 +368,7 @@ export async function registerRoutes(
       try {
         parsed = JSON.parse(cleaned);
       } catch {
-        return res
-          .status(500)
-          .json({ message: "Failed to parse AI response" });
+        return res.status(500).json({ message: "Failed to parse AI response" });
       }
 
       const score = {
@@ -331,7 +387,9 @@ export async function registerRoutes(
       const changeLog = parsed.gamma?.changeLog ?? [];
       const deltaComment = parsed.delta?.comment ?? "";
 
+      // ── Save cleanup scoped to this session's userId ──────────────────────
       await storage.createCleanup({
+        userId: getSessionUserId(req),
         originalPrompt: prompt.trim(),
         fixedPrompt,
         totalScore: score.total,
@@ -351,30 +409,20 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Cleanup error:", error);
-
       const status = error?.status ?? error?.code;
       const msg = error?.message ?? error?.error?.message ?? "";
 
-      // Gemini quota / rate limit
       if (status === 429 || String(msg).includes("RESOURCE_EXHAUSTED")) {
         return res.status(429).json({
-          message:
-            "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
+          message: "Gemini API free quota is exhausted. Please try again later or add billing to your Google project.",
         });
       }
-
-      // Gemini model overloaded / UNAVAILABLE
       if (status === 503 || String(msg).includes("UNAVAILABLE")) {
         return res.status(503).json({
-          message:
-            "The Gemini model is currently overloaded. Spikes in demand are usually temporary—please try again in a minute.",
+          message: "The Gemini model is currently overloaded. Please try again in a minute.",
         });
       }
-
-      // Fallback: real server error
-      return res
-        .status(500)
-        .json({ message: msg || "Internal server error" });
+      return res.status(500).json({ message: msg || "Internal server error" });
     }
   });
 
@@ -385,7 +433,6 @@ export async function registerRoutes(
   app.get("/api/usage", (req, res) => {
     let runs = req.session.runs ?? 0;
     const isPro = req.session.isPro ?? false;
-
     const now = new Date();
     const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -393,7 +440,6 @@ export async function registerRoutes(
       ? new Date(req.session.firstRunAt)
       : null;
 
-    // If the existing window has expired, reset usage and clear the window start.
     if (firstRunAt && now.getTime() >= firstRunAt.getTime() + ONE_WEEK_MS) {
       runs = 0;
       req.session.runs = 0;
@@ -401,11 +447,9 @@ export async function registerRoutes(
       delete req.session.firstRunAt;
     }
 
-    // Initialize the window start when there is usage but no recorded start time.
     if (runs > 0 && !firstRunAt) {
-      const windowStart = now;
-      firstRunAt = windowStart;
-      req.session.firstRunAt = windowStart.toISOString();
+      firstRunAt = now;
+      req.session.firstRunAt = now.toISOString();
     }
 
     const resetAt = firstRunAt
@@ -423,22 +467,141 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/history", async (_req, res) => {
+  // ── History: only this session's cleanups ─────────────────────────────────
+  app.get("/api/history", async (req, res) => {
     try {
-      const recent = await storage.getRecentCleanups(5);
+      const recent = await storage.getRecentCleanups(getSessionUserId(req), 5);
       return res.json(recent);
     } catch (error: any) {
       const msg = String(error?.message || "");
-
       if (msg.includes("no such table: cleanups")) {
         console.warn("cleanups table not yet initialized — returning empty history");
         return res.json([]);
       }
-
       console.error("History error:", error);
-      return res
-        .status(500)
-        .json({ message: error.message || "Internal server error" });
+      return res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/create-checkout-session", async (req, res) => {
+    const priceId = process.env.STRIPE_PRICE_ID;
+
+    if (!stripe || !priceId) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    if (req.session.isPro) {
+      return res.status(400).json({ message: "Already subscribed" });
+    }
+
+    // CSRF/origin guard
+    if (!checkOriginTrust(req, res)) return;
+
+    const configuredBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "");
+    const host = req.get("host");
+    const isAllowedDevHost = !!host && LOCALHOST_HOST_RE.test(host);
+    const baseUrl =
+      configuredBaseUrl ??
+      (IS_DEVELOPMENT && isAllowedDevHost ? `${req.protocol}://${host}` : undefined);
+
+    if (!baseUrl) {
+      return res.status(500).json({ message: "Application base URL is not configured" });
+    }
+
+    try {
+      // Use a one-time random token as client_reference_id so the actual
+      // session ID is never sent to Stripe (dashboard / logs / webhooks).
+      const checkoutToken = crypto.randomUUID();
+      req.session.checkoutToken = checkoutToken;
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve())),
+      );
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: 1 }],
+        client_reference_id: checkoutToken,
+        success_url: `${baseUrl}/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/`,
+      });
+
+      return res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("Stripe checkout error:", err);
+      return res.status(500).json({
+        message: "Unable to create checkout session",
+        code: "STRIPE_CHECKOUT_ERROR",
+      });
+    }
+  });
+
+  app.post("/api/verify-checkout", async (req, res) => {
+    const sessionId = typeof req.body?.session_id === "string" ? req.body.session_id : null;
+
+    if (!sessionId) {
+      return res.status(400).json({ message: "session_id is required" });
+    }
+
+    if (!/^cs_[A-Za-z0-9_]{10,255}$/.test(sessionId)) {
+      return res.status(400).json({ message: "session_id is malformed" });
+    }
+    if (!stripe) {
+      return res.status(503).json({ message: "Payments not configured" });
+    }
+
+    // CSRF/origin guard
+    if (!checkOriginTrust(req, res)) return;
+
+    // Validate the one-time checkout token stored in the session.
+    const checkoutToken = req.session.checkoutToken;
+    if (!checkoutToken) {
+      return res.status(403).json({ message: "No pending checkout" });
+    }
+
+    try {
+      const checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (checkoutSession.client_reference_id !== checkoutToken) {
+        return res.status(403).json({ message: "Session mismatch" });
+      }
+
+      if (checkoutSession.status !== "complete") {
+        return res.status(402).json({ message: "Payment not completed" });
+      }
+
+      const hasSettledPayment =
+        checkoutSession.payment_status === "paid" ||
+        checkoutSession.payment_status === "no_payment_required";
+
+      let hasActiveSubscription = false;
+      if (!hasSettledPayment && checkoutSession.subscription) {
+        const subscriptionId =
+          typeof checkoutSession.subscription === "string"
+            ? checkoutSession.subscription
+            : checkoutSession.subscription.id;
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        hasActiveSubscription =
+          subscription.status === "active" || subscription.status === "trialing";
+      }
+
+      if (!hasSettledPayment && !hasActiveSubscription) {
+        return res.status(402).json({ message: "Payment not yet settled" });
+      }
+
+      // Clear the one-time token before granting Pro access.
+      delete req.session.checkoutToken;
+      req.session.isPro = true;
+      req.session.runs = 0;
+      delete req.session.firstRunAt;
+
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve())),
+      );
+
+      return res.json({ isPro: true });
+    } catch (err: any) {
+      console.error("Stripe verify-checkout error:", err);
+      return res.status(500).json({ message: "Unable to verify checkout session" });
     }
   });
 
