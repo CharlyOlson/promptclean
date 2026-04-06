@@ -1,8 +1,8 @@
 /**
  * PaywallBanner.tsx
  *
- * Free users  → 3-pip gauge (green = used, grey = remaining)
- *               When all 3 used: pips turn amber, shows day countdown to refill.
+ * Free users  → pip gauge with `usage.limit` pips (green = used, grey = remaining)
+ *               When all free runs are used: pips turn amber, shows day countdown to refill.
  * Pro users   → scorecard clock dial showing uses remaining (subscription).
  *
  * Listens for: window.dispatchEvent(new Event("promptclean:usage-refresh"))
@@ -17,27 +17,47 @@ interface UsageData {
   runs: number;
   limit: number;
   isPro: boolean;
-  remaining: number;
+  /** null for Pro users (not applicable) */
+  remaining: number | null;
   /** ISO timestamp of when the free allowance resets (optional — backend may provide) */
   resetAt?: string;
   /** For Pro: total monthly uses included in plan */
   monthlyLimit?: number;
-  /** For Pro: uses remaining this billing period */
-  monthlyRemaining?: number;
+  /** null for free users (not applicable) */
+  monthlyRemaining: number | null;
 }
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function fetchUsage(): Promise<UsageData> {
   const res = await fetch("/api/usage", { credentials: "include" });
   if (!res.ok) throw new Error("usage fetch failed");
-  return res.json();
+  const data: UsageData = await res.json();
+  return data;
 }
 
 async function startCheckout(): Promise<void> {
-  // The `/api/create-checkout-session` endpoint is not implemented in this repository.
-  // To avoid a guaranteed 404/500, we currently fail gracefully instead of calling it.
-  window.alert("Upgrading is not available right now. Please try again later.");
+  const res = await fetch("/api/create-checkout-session", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("checkout failed");
+  const { url } = await res.json();
+  if (typeof url !== "string" || !url) {
+    throw new Error("checkout URL missing from response");
+  }
+  window.location.href = url;
 }
+
+async function verifyCheckout(sessionId: string): Promise<void> {
+  const res = await fetch("/api/verify-checkout", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error("checkout verification failed");
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysUntil(isoTimestamp: string): number {
   const now = Date.now();
@@ -49,19 +69,21 @@ function daysUntil(isoTimestamp: string): number {
 /**
  * Estimate days until free runs reset.
  * Falls back to "7 days from now" if the backend doesn't send resetAt.
+ * (Replace with real backend value when you add it.)
  */
 function estimateResetDays(usage: UsageData): number {
   if (usage.resetAt) return daysUntil(usage.resetAt);
+  // Fallback: show 7 days as placeholder
   return 7;
 }
-
 // ── Free Pip Gauge ─────────────────────────────────────────────────────────────
 function FreePipGauge({ usage, onUpgrade, loading }: {
   usage: UsageData;
   onUpgrade: () => void;
   loading: boolean;
 }) {
-  const exhausted = usage.remaining === 0;
+  const remaining = usage.remaining ?? 0;
+  const exhausted = remaining === 0;
   const resetDays = exhausted ? estimateResetDays(usage) : null;
   const pips = Array.from({ length: usage.limit }, (_, i) => i);
 
@@ -75,11 +97,11 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       role="status"
       aria-label={exhausted
         ? `All free runs used. Resets in ${resetDays} days.`
-        : `${usage.remaining} of ${usage.limit} free runs remaining`
+        : `${remaining} of ${usage.limit} free runs remaining`
       }
     >
       {/* Pip row */}
-      <div className="flex items-center gap-2" title={`${usage.remaining} free runs left`}>
+      <div className="flex items-center gap-2" title={`${remaining} free runs left`}>
         {pips.map((i) => {
           const used = i < usage.runs;
           return (
@@ -142,8 +164,8 @@ function FreePipGauge({ usage, onUpgrade, loading }: {
       ) : (
         <>
           <span className="text-xs">
-            <span className="font-medium text-foreground">{usage.remaining}</span>
-            {" "}free {usage.remaining === 1 ? "run" : "runs"} left
+            <span className="font-medium text-foreground">{remaining}</span>
+            {" "}free {remaining === 1 ? "run" : "runs"} left
           </span>
           <button
             onClick={onUpgrade}
@@ -179,9 +201,17 @@ function ProClockDial({ remaining, total }: { remaining: number; total: number }
     pct > 0.2 ? "hsl(38 85% 52%)" :
                 "hsl(0 72% 51%)";
 
+  const ariaLabel = `Pro usage: ${remaining} of ${total} uses left this month`;
+
   return (
     <div className="flex items-center gap-3">
-      <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
+      <svg
+        width="72"
+        height="72"
+        viewBox="0 0 72 72"
+        role="img"
+        aria-label={ariaLabel}
+      >
         {/* Track */}
         <circle cx={cx} cy={cy} r={R} fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
         {/* Filled arc — start at top (−90°) */}
@@ -233,7 +263,7 @@ function ProScorecard({ usage }: { usage: UsageData }) {
       <ProClockDial remaining={remaining} total={monthly} />
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-bold text-foreground">PromptClean Pro</span>
-        <span className="text-[10px] text-muted-foreground">Unlimited monthly cleanups</span>
+        <span className="text-[10px] text-muted-foreground">{monthly} cleanups / month</span>
         <span className="text-[10px] text-emerald-400 font-medium mt-0.5 flex items-center gap-1">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           Active subscription
@@ -247,6 +277,7 @@ function ProScorecard({ usage }: { usage: UsageData }) {
 export default function PaywallBanner() {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState(false);
 
   const refresh = useCallback(() => {
     fetchUsage().then(setUsage).catch((err) => {
@@ -263,14 +294,52 @@ export default function PaywallBanner() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("payment") === "success") {
-      refresh();
-      params.delete("payment");
-      const newSearch = params.toString();
-      const { pathname, hash } = window.location;
-      const newUrl = pathname + (newSearch ? `?${newSearch}` : "") + hash;
-      window.history.replaceState({}, "", newUrl);
+      const sessionId = params.get("session_id");
+      const cleanUrl = () => {
+        const nextParams = new URLSearchParams(window.location.search);
+        nextParams.delete("payment");
+        nextParams.delete("session_id");
+        const nextSearch = nextParams.toString();
+        const nextUrl =
+          window.location.pathname +
+          (nextSearch ? `?${nextSearch}` : "") +
+          window.location.hash;
+        window.history.replaceState({}, "", nextUrl);
+      };
+      if (sessionId) {
+        verifyCheckout(sessionId)
+          .then(() => {
+            cleanUrl();
+            refresh();
+          })
+          .catch((err) => {
+            console.error("[PaywallBanner] Verification failed:", err);
+            // Leave session_id in the URL so the user can reload to retry.
+            setVerifyError(true);
+          });
+      } else {
+        cleanUrl();
+        refresh();
+      }
     }
   }, [refresh]);
+
+  if (verifyError) {
+    return (
+      <div className="rounded-lg border border-amber-500/60 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-4 mb-4">
+        <span className="text-xs text-amber-400">
+          Payment verification failed. Reload the page to retry.
+        </span>
+        <button
+          onClick={() => window.location.reload()}
+          className="text-xs text-amber-400 underline shrink-0"
+          aria-label="Retry payment verification"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (!usage) return null;
 
