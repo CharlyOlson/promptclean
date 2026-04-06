@@ -542,6 +542,9 @@ export async function registerRoutes(
       return res.status(400).json({ message: "session_id is required" });
     }
 
+    if (!/^cs_[A-Za-z0-9_]{10,255}$/.test(sessionId)) {
+      return res.status(400).json({ message: "session_id is malformed" });
+    }
     if (!stripe) {
       return res.status(503).json({ message: "Payments not configured" });
     }
