@@ -293,7 +293,15 @@ export default function PaywallBanner() {
       const sessionId = params.get("session_id");
       const finish = () => {
         refresh();
-        window.history.replaceState({}, "", "/#/");
+        const nextParams = new URLSearchParams(window.location.search);
+        nextParams.delete("payment");
+        nextParams.delete("session_id");
+        const nextSearch = nextParams.toString();
+        const nextUrl =
+          window.location.pathname +
+          (nextSearch ? `?${nextSearch}` : "") +
+          window.location.hash;
+        window.history.replaceState({}, "", nextUrl);
       };
       if (sessionId) {
         verifyCheckout(sessionId).then(finish).catch(finish);
