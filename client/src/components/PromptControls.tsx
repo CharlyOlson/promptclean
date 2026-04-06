@@ -56,7 +56,7 @@ const MODELS = [
   { id: "gpt-3.5-turbo",    label: "GPT-3.5" },
   { id: "claude-3-5",       label: "Claude 3.5" },
   { id: "claude-3-opus",    label: "Claude Opus" },
-  { id: "gemini-2-5-flash", label: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { id: "gemini-pro",       label: "Gemini Pro" },
   { id: "llama-3",          label: "Llama 3" },
   { id: "mistral",          label: "Mistral" },
