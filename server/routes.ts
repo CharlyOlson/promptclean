@@ -511,6 +511,24 @@ export async function registerRoutes(
         return res.status(402).json({ message: "Payment not completed" });
       }
 
+      const hasSettledPayment =
+        checkoutSession.payment_status === "paid" ||
+        checkoutSession.payment_status === "no_payment_required";
+
+      let hasActiveSubscription = false;
+      if (!hasSettledPayment && checkoutSession.subscription) {
+        const subscriptionId =
+          typeof checkoutSession.subscription === "string"
+            ? checkoutSession.subscription
+            : checkoutSession.subscription.id;
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        hasActiveSubscription =
+          subscription.status === "active" || subscription.status === "trialing";
+      }
+
+      if (!hasSettledPayment && !hasActiveSubscription) {
+        return res.status(402).json({ message: "Payment not yet settled" });
+      }
       req.session.isPro = true;
       req.session.runs = 0;
 
