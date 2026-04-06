@@ -324,8 +324,6 @@ export default function PaywallBanner() {
     }
   }, [refresh]);
 
-  if (!usage) return null;
-
   if (verifyError) {
     return (
       <div className="rounded-lg border border-amber-500/60 bg-amber-500/10 px-4 py-3 flex items-center justify-between gap-4 mb-4">
@@ -342,6 +340,8 @@ export default function PaywallBanner() {
       </div>
     );
   }
+
+  if (!usage) return null;
 
   const handleUpgrade = async () => {
     setLoading(true);
