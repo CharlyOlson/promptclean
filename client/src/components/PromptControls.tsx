@@ -98,10 +98,11 @@ function Chip({ label, active, onClick }: ChipProps) {
 interface SectionProps {
   label: string;
   groupId: string;
+  groupRole?: "radiogroup" | "group";
   children: ReactNode;
 }
 
-function ControlSection({ label, groupId, children }: SectionProps) {
+function ControlSection({ label, groupId, groupRole = "radiogroup", children }: SectionProps) {
   return (
     <div className="space-y-1.5">
       <span
@@ -110,7 +111,7 @@ function ControlSection({ label, groupId, children }: SectionProps) {
       >
         {label}
       </span>
-      <div role="radiogroup" aria-labelledby={groupId} className="flex flex-wrap gap-1.5">
+      <div role={groupRole} aria-labelledby={groupId} className="flex flex-wrap gap-1.5">
         {children}
       </div>
     </div>
@@ -150,7 +151,7 @@ export default function PromptControls({ value, onChange }: Props) {
       </ControlSection>
 
       {/* Row 3 — Output Length */}
-      <ControlSection label="Output Length" groupId="ctrl-output-length">
+      <ControlSection label="Output Length" groupId="ctrl-output-length" groupRole="group">
         {LENGTHS.map((l) => {
           const isActive = value.length === l.id;
           // Bar heights visualise output length: short = flat, medium = bell, long = ascending
@@ -174,8 +175,7 @@ export default function PromptControls({ value, onChange }: Props) {
             <button
               key={l.id}
               type="button"
-              role="radio"
-              aria-checked={isActive}
+              aria-pressed={isActive}
               onClick={() => onChange({ ...value, length: l.id })}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border
                 transition-all duration-150
