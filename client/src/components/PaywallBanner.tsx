@@ -335,6 +335,7 @@ export default function PaywallBanner() {
         <button
           onClick={() => window.location.reload()}
           className="text-xs text-amber-400 underline shrink-0"
+          aria-label="Retry payment verification"
         >
           Retry
         </button>
