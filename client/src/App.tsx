@@ -10,13 +10,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
-import { PC_SEEN_WELCOME_KEY } from "./constants";
+import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
 /**
  * Guards the root route: first-time visitors go to /welcome.
  * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
  */
-function RootGate() {
+function FirstVisitGuard() {
   const [location, navigate] = useLocation();
 
   let shouldRedirect = false;
@@ -39,28 +39,6 @@ function RootGate() {
   return <Home />;
 }
 
-function AppRouter() {
-  const [location, navigate] = useLocation();
-
-  useLayoutEffect(() => {
-    if (needsWelcome() && location !== "/welcome") {
-      navigate("/welcome", true);
-    }
-  }, [location, navigate]);
-
-  if (needsWelcome() && location !== "/welcome") {
-    return null;
-  }
-
-  return (
-    <Switch>
-      <Route path="/" component={FirstVisitGuard} />
-      <Route path="/welcome" component={Welcome} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -72,7 +50,11 @@ function App() {
           for deep links, so useHashLocation avoids refresh/direct-link 404s.
         */}
         <Router hook={useHashLocation}>
-          <AppRouter />
+          <Switch>
+            <Route path="/" component={FirstVisitGuard} />
+            <Route path="/welcome" component={Welcome} />
+            <Route component={NotFound} />
+          </Switch>
         </Router>
       </TooltipProvider>
     </QueryClientProvider>
