@@ -37,23 +37,44 @@ sqlite.exec(`
     .all() as ColumnInfo[];
   const columnNames = new Set(columns.map((c) => c.name));
 
-  if (!columnNames.has("user_id")) {
-    console.log(
-      "[db] Migrating cleanups table: adding user_id column (existing rows → 'anonymous')",
-    );
-    sqlite.exec(
-      "ALTER TABLE cleanups ADD COLUMN user_id TEXT NOT NULL DEFAULT 'anonymous'",
-    );
+  function addColumnIfMissing(
+    columnName: string,
+    logMessage: string,
+    sql: string,
+  ) {
+    if (columnNames.has(columnName)) {
+      return;
+    }
+
+    console.log(logMessage);
+
+    try {
+      sqlite.exec(sql);
+      columnNames.add(columnName);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("duplicate column name")
+      ) {
+        columnNames.add(columnName);
+        return;
+      }
+
+      throw error;
+    }
   }
 
-  if (!columnNames.has("created_at")) {
-    console.log(
-      "[db] Migrating cleanups table: adding created_at column (existing rows → 0)",
-    );
-    sqlite.exec(
-      "ALTER TABLE cleanups ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
-    );
-  }
+  addColumnIfMissing(
+    "user_id",
+    "[db] Migrating cleanups table: adding user_id column (existing rows → 'anonymous')",
+    "ALTER TABLE cleanups ADD COLUMN user_id TEXT NOT NULL DEFAULT 'anonymous'",
+  );
+
+  addColumnIfMissing(
+    "created_at",
+    "[db] Migrating cleanups table: adding created_at column (existing rows → 0)",
+    "ALTER TABLE cleanups ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+  );
 })();
 
 export interface IStorage {
