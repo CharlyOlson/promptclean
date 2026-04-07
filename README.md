@@ -51,6 +51,8 @@ npm run build
 3. Add `GEMINI_API_KEY` as an environment variable
 4. Deploy — Railway auto-detects Node.js
 
+> **Note on routing:** The client uses hash-based routing (`/#/path`) via wouter's `useHashLocation`. This is intentional — Railway doesn't guarantee a server-side SPA fallback for deep links, so browser routing would cause 404s on refresh or direct navigation.
+
 ## Environment Variables
 
 | Variable | Required | Description |

@@ -15,8 +15,8 @@
  */
 
 import { useLocation } from "wouter";
+import { PC_SEEN_WELCOME_KEY } from "../lib/constants";
 import { Zap, Target, Layers, ArrowRight } from "lucide-react";
-import { PC_SEEN_WELCOME_KEY } from "../constants";
 
 const TIPS = [
   {
@@ -68,7 +68,7 @@ export default function Welcome() {
     } catch {
       // ignore storage errors
     }
-    navigate("/", true);
+    navigate("/", { replace: true });
   }
 
   return (
