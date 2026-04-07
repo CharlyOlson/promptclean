@@ -359,6 +359,8 @@ export async function registerRoutes(
       const response = await generateWithRetry(input, CLEANUP_MODEL);
 
       const rawText = response.text ?? "";
+      console.log("[cleanup] Raw Gemini response (first 500 chars):", rawText.slice(0, 500));
+
       const cleaned = rawText
         .replace(/```json\s*/g, "")
         .replace(/```\s*/g, "")
@@ -367,8 +369,24 @@ export async function registerRoutes(
       let parsed: any;
       try {
         parsed = JSON.parse(cleaned);
-      } catch {
-        return res.status(500).json({ message: "Failed to parse AI response" });
+      } catch (parseErr: any) {
+        console.error("[cleanup] JSON parse failed.");
+        console.error("[cleanup] Raw response text:", rawText);
+        console.error("[cleanup] Cleaned text attempted:", cleaned);
+        console.error("[cleanup] Parse error:", parseErr?.message ?? parseErr);
+
+        const hint = !rawText
+          ? "Response was empty"
+          : !cleaned
+            ? "Response was empty after stripping markdown fences"
+            : "Response was not valid JSON";
+
+        return res.status(500).json({
+          message: `Failed to parse AI response: ${hint}`,
+          hint,
+          rawPreview: rawText.slice(0, 500),
+          parseError: parseErr?.message ?? String(parseErr),
+        });
       }
 
       const score = {
