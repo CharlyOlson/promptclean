@@ -27,6 +27,56 @@ sqlite.exec(`
   )
 `);
 
+// ── Schema migration: add columns that may be missing from older databases ────
+// SQLite does not support IF NOT EXISTS on ALTER TABLE, so we inspect
+// PRAGMA table_info and only issue the ALTER when the column is absent.
+(function migrateSchema() {
+  type ColumnInfo = { name: string };
+  const columns = sqlite
+    .prepare("PRAGMA table_info(cleanups)")
+    .all() as ColumnInfo[];
+  const columnNames = new Set(columns.map((c) => c.name));
+
+  function addColumnIfMissing(
+    columnName: string,
+    logMessage: string,
+    sql: string,
+  ) {
+    if (columnNames.has(columnName)) {
+      return;
+    }
+
+    console.log(logMessage);
+
+    try {
+      sqlite.exec(sql);
+      columnNames.add(columnName);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("duplicate column name")
+      ) {
+        columnNames.add(columnName);
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  addColumnIfMissing(
+    "user_id",
+    "[db] Migrating cleanups table: adding user_id column (existing rows → 'anonymous')",
+    "ALTER TABLE cleanups ADD COLUMN user_id TEXT NOT NULL DEFAULT 'anonymous'",
+  );
+
+  addColumnIfMissing(
+    "created_at",
+    "[db] Migrating cleanups table: adding created_at column (existing rows → 0)",
+    "ALTER TABLE cleanups ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+  );
+})();
+
 export interface IStorage {
   createCleanup(cleanup: InsertCleanup): Promise<Cleanup>;
   getRecentCleanups(userId: string, limit: number): Promise<Cleanup[]>;
