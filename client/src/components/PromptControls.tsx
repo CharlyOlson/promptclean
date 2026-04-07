@@ -52,7 +52,7 @@ const MODELS = [
   { id: "gpt-3.5-turbo",    label: "GPT-3.5" },
   { id: "claude-3-5",       label: "Claude 3.5" },
   { id: "claude-3-opus",    label: "Claude Opus" },
-  { id: "gemini-2-5-flash", label: "Gemini 2.5" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { id: "gemini-pro",       label: "Gemini Pro" },
   { id: "llama-3",          label: "Llama 3" },
   { id: "mistral",          label: "Mistral" },
@@ -81,8 +81,9 @@ function Chip({ label, active, onClick }: ChipProps) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
-      aria-pressed={active}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150
         ${active
           ? "bg-primary text-primary-foreground border-primary shadow-sm"
@@ -96,16 +97,23 @@ function Chip({ label, active, onClick }: ChipProps) {
 
 interface SectionProps {
   label: string;
+  groupId: string;
+  groupRole?: "radiogroup" | "group";
   children: ReactNode;
 }
 
-function ControlSection({ label, children }: SectionProps) {
+function ControlSection({ label, groupId, groupRole = "radiogroup", children }: SectionProps) {
   return (
-    <div className="space-y-1.5" role="group" aria-label={label}>
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
+    <div className="space-y-1.5">
+      <span
+        id={groupId}
+        className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70"
+      >
         {label}
       </span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      <div role={groupRole} aria-labelledby={groupId} className="flex flex-wrap gap-1.5">
+        {children}
+      </div>
     </div>
   );
 }
@@ -119,7 +127,7 @@ export default function PromptControls({ value, onChange }: Props) {
   return (
     <div className="rounded-lg border border-border bg-card/50 px-4 py-3 space-y-3 mb-3">
       {/* Row 1 — Prompt Type */}
-      <ControlSection label="Prompt Type">
+      <ControlSection label="Prompt Type" groupId="ctrl-prompt-type">
         {PROMPT_TYPES.map((t) => (
           <Chip
             key={t.id}
@@ -131,7 +139,7 @@ export default function PromptControls({ value, onChange }: Props) {
       </ControlSection>
 
       {/* Row 2 — Target Model */}
-      <ControlSection label="Target Model">
+      <ControlSection label="Target Model" groupId="ctrl-target-model">
         {MODELS.map((m) => (
           <Chip
             key={m.id}
@@ -143,10 +151,10 @@ export default function PromptControls({ value, onChange }: Props) {
       </ControlSection>
 
       {/* Row 3 — Output Length */}
-      <ControlSection label="Output Length">
+      <ControlSection label="Output Length" groupId="ctrl-output-length" groupRole="group">
         {LENGTHS.map((l) => {
           const isActive = value.length === l.id;
-          // Bar heights: short = all short, medium = tall middle, long = ascending
+          // Bar heights visualise output length: short = flat, medium = bell, long = ascending
           let bar1H: string;
           let bar2H: string;
           let bar3H: string;
@@ -156,17 +164,12 @@ export default function PromptControls({ value, onChange }: Props) {
             bar3H = "h-1.5";
           } else if (l.id === "medium") {
             bar1H = "h-1.5";
-            bar2H = "h-3.5"; // tall middle
+            bar2H = "h-3.5";
             bar3H = "h-1.5";
-          } else if (l.id === "long") {
+          } else {
             bar1H = "h-1.5";
             bar2H = "h-3.5";
-            bar3H = "h-5";   // ascending
-          } else {
-            // Fallback to short pattern for any unexpected id
-            bar1H = "h-1.5";
-            bar2H = "h-1.5";
-            bar3H = "h-1.5";
+            bar3H = "h-5";
           }
           return (
             <button
