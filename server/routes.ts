@@ -293,7 +293,11 @@ export async function registerRoutes(
       try {
         questions = JSON.parse(cleaned);
         if (!Array.isArray(questions)) throw new Error("not array");
-      } catch {
+      } catch (parseErr: any) {
+        console.error("[questions] JSON parse failed.");
+        console.error(`[questions] Raw response preview (first 500 chars, total length ${rawText.length}):`, rawText.slice(0, 500));
+        console.error(`[questions] Cleaned text preview (first 500 chars, total length ${cleaned.length}):`, cleaned.slice(0, 500));
+        console.error("[questions] Parse error:", parseErr?.message ?? parseErr);
         return res.status(500).json({ message: "Failed to parse questions" });
       }
 
@@ -359,6 +363,10 @@ export async function registerRoutes(
       const response = await generateWithRetry(input, CLEANUP_MODEL);
 
       const rawText = response.text ?? "";
+      if (IS_DEVELOPMENT) {
+        console.log("[cleanup] Raw Gemini response (first 500 chars):", rawText.slice(0, 500));
+      }
+
       const cleaned = rawText
         .replace(/```json\s*/g, "")
         .replace(/```\s*/g, "")
@@ -367,8 +375,22 @@ export async function registerRoutes(
       let parsed: any;
       try {
         parsed = JSON.parse(cleaned);
-      } catch {
-        return res.status(500).json({ message: "Failed to parse AI response" });
+      } catch (parseErr: any) {
+        console.error("[cleanup] JSON parse failed.");
+        console.error(`[cleanup] Raw response preview (first 500 chars, total length ${rawText.length}):`, rawText.slice(0, 500));
+        console.error(`[cleanup] Cleaned text preview (first 500 chars, total length ${cleaned.length}):`, cleaned.slice(0, 500));
+        console.error("[cleanup] Parse error:", parseErr?.message ?? parseErr);
+
+        const hint = !rawText
+          ? "Response was empty"
+          : !cleaned
+            ? "Response was empty after stripping markdown fences"
+            : "Response was not valid JSON";
+
+        return res.status(500).json({
+          message: `Failed to parse AI response: ${hint}`,
+          hint,
+        });
       }
 
       const score = {
