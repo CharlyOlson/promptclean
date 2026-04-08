@@ -373,8 +373,8 @@ export async function registerRoutes(
         parsed = JSON.parse(cleaned);
       } catch (parseErr: any) {
         console.error("[cleanup] JSON parse failed.");
-        console.error("[cleanup] Raw response preview (first 500 chars, total length %d):", rawText.length, rawText.slice(0, 500));
-        console.error("[cleanup] Cleaned text preview (first 500 chars, total length %d):", cleaned.length, cleaned.slice(0, 500));
+        console.error(`[cleanup] Raw response preview (first 500 chars, total length ${rawText.length}):`, rawText.slice(0, 500));
+        console.error(`[cleanup] Cleaned text preview (first 500 chars, total length ${cleaned.length}):`, cleaned.slice(0, 500));
         console.error("[cleanup] Parse error:", parseErr?.message ?? parseErr);
 
         const hint = !rawText
