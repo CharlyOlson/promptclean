@@ -293,7 +293,11 @@ export async function registerRoutes(
       try {
         questions = JSON.parse(cleaned);
         if (!Array.isArray(questions)) throw new Error("not array");
-      } catch {
+      } catch (parseErr: any) {
+        console.error("[questions] JSON parse failed.");
+        console.error(`[questions] Raw response preview (first 500 chars, total length ${rawText.length}):`, rawText.slice(0, 500));
+        console.error(`[questions] Cleaned text preview (first 500 chars, total length ${cleaned.length}):`, cleaned.slice(0, 500));
+        console.error("[questions] Parse error:", parseErr?.message ?? parseErr);
         return res.status(500).json({ message: "Failed to parse questions" });
       }
 
