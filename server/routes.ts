@@ -384,8 +384,6 @@ export async function registerRoutes(
         return res.status(500).json({
           message: `Failed to parse AI response: ${hint}`,
           hint,
-          rawPreview: rawText.slice(0, 500),
-          parseError: parseErr?.message ?? String(parseErr),
         });
       }
 
