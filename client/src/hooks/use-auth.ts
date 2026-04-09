@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, queryClient } from "@/lib/queryClient";
 
 interface AuthUser {
   id: string;
@@ -9,12 +9,7 @@ interface AuthUser {
 export function useAuth() {
   const { data: user, isLoading } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
-    queryFn: async () => {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
-      if (res.status === 401) return null;
-      if (!res.ok) throw new Error("Failed to check auth");
-      return res.json();
-    },
+    queryFn: getQueryFn<AuthUser | null>({ on401: "returnNull" }),
     staleTime: Infinity,
     retry: false,
   });

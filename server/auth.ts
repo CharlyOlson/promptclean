@@ -201,7 +201,7 @@ export function registerAuthRoutes(app: Express) {
       // Regenerate session to prevent session fixation
       await regenerateSession(req, String(user.id), username);
 
-      return res.json({ id: user.id, username: user.username });
+      return res.json({ id: String(user.id), username: user.username });
     } catch (error: any) {
       console.error("Login error:", error);
       return res.status(500).json({ message: "Login failed" });

@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { GoogleGenAI } from "@google/genai";
@@ -21,14 +21,23 @@ declare module "express-session" {
   }
 }
 
-// ── Stable anonymous session ID ───────────────────────────────────────────────
-// When OAuth is added later, replace this with the authenticated user's ID.
-// History rows already have user_id so the migration is just a swap here.
+// ── Stable session user ID ────────────────────────────────────────────────────
+// Returns the authenticated user's ID from the session. Falls back to a random
+// UUID only if authUsername is already set (should always be true behind
+// requireAuth middleware).
 function getSessionUserId(req: any): string {
   if (!req.session.userId) {
     req.session.userId = crypto.randomUUID();
   }
   return req.session.userId;
+}
+
+// ── Auth guard for API routes ─────────────────────────────────────────────────
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.authUsername) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  next();
 }
 
 const FREE_RUN_LIMIT = 5;
@@ -256,7 +265,7 @@ export async function registerRoutes(
   registerAuthRoutes(app);
 
   // ── Step 1: Generate questions ─────────────────────────────────────────────
-  app.post("/api/questions", async (req, res) => {
+  app.post("/api/questions", requireAuth, async (req, res) => {
     try {
       const { prompt } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
@@ -333,7 +342,7 @@ export async function registerRoutes(
   });
 
   // ── Step 2: Full cleanup with answers ─────────────────────────────────────
-  app.post("/api/cleanup", async (req, res) => {
+  app.post("/api/cleanup", requireAuth, async (req, res) => {
     try {
       const { prompt, answers, weightedAnswers } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
@@ -457,7 +466,7 @@ export async function registerRoutes(
     return res.json({ ok: true, gemini: !!process.env.GEMINI_API_KEY });
   });
 
-  app.get("/api/usage", (req, res) => {
+  app.get("/api/usage", requireAuth, (req, res) => {
     let runs = req.session.runs ?? 0;
     const isPro = req.session.isPro ?? false;
     const now = new Date();
@@ -495,7 +504,7 @@ export async function registerRoutes(
   });
 
   // ── History: only this session's cleanups ─────────────────────────────────
-  app.get("/api/history", async (req, res) => {
+  app.get("/api/history", requireAuth, async (req, res) => {
     try {
       const recent = await storage.getRecentCleanups(getSessionUserId(req), 5);
       return res.json(recent);
@@ -510,7 +519,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/create-checkout-session", async (req, res) => {
+  app.post("/api/create-checkout-session", requireAuth, async (req, res) => {
     const priceId = process.env.STRIPE_PRICE_ID;
 
     if (!stripe || !priceId) {
@@ -562,7 +571,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/verify-checkout", async (req, res) => {
+  app.post("/api/verify-checkout", requireAuth, async (req, res) => {
     const sessionId = typeof req.body?.session_id === "string" ? req.body.session_id : null;
 
     if (!sessionId) {
