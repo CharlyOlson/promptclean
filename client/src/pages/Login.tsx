@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 export default function Login() {
   const [, navigate] = useLocation();
-  const { login, register, isLoggingIn, isRegistering, loginError, registerError } = useAuth();
+  const { login, register, isLoggingIn, isRegistering } = useAuth();
 
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [username, setUsername] = useState("");
