@@ -1,4 +1,4 @@
-import { type Cleanup, type InsertCleanup, cleanups, users } from "@shared/schema";
+import { type Cleanup, type InsertCleanup, cleanups } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { desc, eq } from "drizzle-orm";
