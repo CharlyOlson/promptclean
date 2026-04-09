@@ -22,9 +22,8 @@ declare module "express-session" {
 }
 
 // ── Stable session user ID ────────────────────────────────────────────────────
-// Returns the authenticated user's ID from the session. Falls back to a random
-// UUID only if authUsername is already set (should always be true behind
-// requireAuth middleware).
+// Returns the authenticated user's ID from the session. If userId is not yet
+// set (e.g. legacy session), falls back to a random UUID.
 function getSessionUserId(req: any): string {
   if (!req.session.userId) {
     req.session.userId = crypto.randomUUID();
