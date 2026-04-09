@@ -6,11 +6,33 @@
  * Registers /api/auth/* routes on the Express app.
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./storage";
 import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+
+// ── Simple in-memory rate limiter ───────────────────────────────────────────
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 10;
+const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function rateLimit(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+
+  if (entry && now < entry.resetAt) {
+    if (entry.count >= MAX_LOGIN_ATTEMPTS) {
+      return res.status(429).json({ message: "Too many attempts. Please try again later." });
+    }
+    entry.count++;
+  } else {
+    loginAttempts.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+  }
+
+  next();
+}
 
 // ── Password hashing helpers ────────────────────────────────────────────────
 
@@ -38,7 +60,7 @@ function verifyPassword(password: string, stored: string): Promise<boolean> {
 
 export function registerAuthRoutes(app: Express) {
   // Register
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
@@ -54,8 +76,8 @@ export function registerAuthRoutes(app: Express) {
       return res.status(400).json({ message: "Username must be between 3 and 30 characters" });
     }
 
-    if (password.length < 4) {
-      return res.status(400).json({ message: "Password must be at least 4 characters" });
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
     }
 
     // Only allow alphanumeric + underscore
@@ -93,7 +115,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Login
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
