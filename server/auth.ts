@@ -26,7 +26,7 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 function rateLimit(req: Request, res: Response, next: NextFunction) {
-  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const ip = req.socket.remoteAddress ?? "unknown";
   const now = Date.now();
   const entry = loginAttempts.get(ip);
 

@@ -563,7 +563,11 @@ export default function Home() {
             </button>
             {user && (
               <button
-                onClick={() => logout()}
+                onClick={() => {
+                  void logout().catch((error) => {
+                    console.error("Logout failed", error);
+                  });
+                }}
                 className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
                 aria-label="Sign out"
                 title="Sign out"
