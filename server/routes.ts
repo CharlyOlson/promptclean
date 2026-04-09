@@ -33,7 +33,7 @@ function getSessionUserId(req: any): string {
 
 // ── Auth guard for API routes ─────────────────────────────────────────────────
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.authUsername) {
+  if (!req.session.authUsername || !req.session.userId) {
     return res.status(401).json({ message: "Authentication required" });
   }
   next();
