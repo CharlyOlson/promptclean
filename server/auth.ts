@@ -144,7 +144,7 @@ export function registerAuthRoutes(app: Express) {
       // Regenerate session to prevent session fixation
       await regenerateSession(req, String(user.id), username);
 
-      return res.json({ id: user.id, username: user.username });
+      return res.json({ id: String(user.id), username: user.username });
     } catch (error: any) {
       // Handle concurrent registration hitting UNIQUE constraint
       if (error?.code === "SQLITE_CONSTRAINT_UNIQUE" || error?.message?.includes("UNIQUE constraint failed")) {
