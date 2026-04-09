@@ -89,18 +89,32 @@ function verifyPassword(password: string, stored: string): Promise<boolean> {
 
 /**
  * Regenerates the session to prevent session fixation attacks.
- * Copies over any existing session data and sets the new userId/authUsername.
+ * Preserves quota/metering fields (runs, firstRunAt, isPro, checkoutToken)
+ * across regeneration so that login/register cannot be used to reset limits.
  */
 function regenerateSession(
   req: Request,
   userId: string,
   username: string,
 ): Promise<void> {
+  // Capture metering/subscription fields before regeneration destroys them
+  const prev = {
+    runs: req.session.runs,
+    firstRunAt: req.session.firstRunAt,
+    isPro: req.session.isPro,
+    checkoutToken: req.session.checkoutToken,
+  };
+
   return new Promise((resolve, reject) => {
     req.session.regenerate((err) => {
       if (err) return reject(err);
+      // Restore preserved fields
       req.session.userId = userId;
       req.session.authUsername = username;
+      if (prev.runs !== undefined) req.session.runs = prev.runs;
+      if (prev.firstRunAt !== undefined) req.session.firstRunAt = prev.firstRunAt;
+      if (prev.isPro !== undefined) req.session.isPro = prev.isPro;
+      if (prev.checkoutToken !== undefined) req.session.checkoutToken = prev.checkoutToken;
       resolve();
     });
   });
