@@ -17,6 +17,14 @@ const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_LOGIN_ATTEMPTS = 10;
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
+// Prune expired entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  loginAttempts.forEach((entry, ip) => {
+    if (now >= entry.resetAt) loginAttempts.delete(ip);
+  });
+}, 5 * 60 * 1000).unref();
+
 function rateLimit(req: Request, res: Response, next: NextFunction) {
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
   const now = Date.now();
@@ -79,6 +87,25 @@ function verifyPassword(password: string, stored: string): Promise<boolean> {
 
 // ── Route registration ──────────────────────────────────────────────────────
 
+/**
+ * Regenerates the session to prevent session fixation attacks.
+ * Copies over any existing session data and sets the new userId/authUsername.
+ */
+function regenerateSession(
+  req: Request,
+  userId: string,
+  username: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) return reject(err);
+      req.session.userId = userId;
+      req.session.authUsername = username;
+      resolve();
+    });
+  });
+}
+
 export function registerAuthRoutes(app: Express) {
   // Register
   app.post("/api/auth/register", requireJson, rateLimit, async (req, res) => {
@@ -107,16 +134,6 @@ export function registerAuthRoutes(app: Express) {
     }
 
     try {
-      const existing = db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .get();
-
-      if (existing) {
-        return res.status(409).json({ message: "Username already taken" });
-      }
-
       const hashed = await hashPassword(password);
       const user = db
         .insert(users)
@@ -124,12 +141,15 @@ export function registerAuthRoutes(app: Express) {
         .returning()
         .get();
 
-      // Set session
-      req.session.userId = String(user.id);
-      req.session.authUsername = username;
+      // Regenerate session to prevent session fixation
+      await regenerateSession(req, String(user.id), username);
 
       return res.json({ id: user.id, username: user.username });
     } catch (error: any) {
+      // Handle concurrent registration hitting UNIQUE constraint
+      if (error?.code === "SQLITE_CONSTRAINT_UNIQUE" || error?.message?.includes("UNIQUE constraint failed")) {
+        return res.status(409).json({ message: "Username already taken" });
+      }
       console.error("Register error:", error);
       return res.status(500).json({ message: "Registration failed" });
     }
@@ -164,9 +184,8 @@ export function registerAuthRoutes(app: Express) {
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      // Set session
-      req.session.userId = String(user.id);
-      req.session.authUsername = username;
+      // Regenerate session to prevent session fixation
+      await regenerateSession(req, String(user.id), username);
 
       return res.json({ id: user.id, username: user.username });
     } catch (error: any) {
