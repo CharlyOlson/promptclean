@@ -17,6 +17,15 @@ sqlite.pragma("foreign_keys = ON");
 export const db = drizzle(sqlite);
 
 sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    username        TEXT    NOT NULL UNIQUE,
+    password        TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch())
+  )
+`);
+
+sqlite.exec(`
   CREATE TABLE IF NOT EXISTS cleanups (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         TEXT    NOT NULL,

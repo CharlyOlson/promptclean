@@ -57,6 +57,12 @@ const MODELS = [
   { id: "llama-3",          label: "Llama 3" },
   { id: "mistral",          label: "Mistral" },
   { id: "perplexity",       label: "Perplexity" },
+  { id: "banana",           label: "🍌 Banana" },
+  { id: "cohere-command",   label: "Cohere Command" },
+  { id: "deepseek",         label: "DeepSeek" },
+  { id: "falcon",           label: "Falcon" },
+  { id: "phi-3",            label: "Phi-3" },
+  { id: "qwen",             label: "Qwen" },
 ] as const;
 
 export interface PromptConfig {

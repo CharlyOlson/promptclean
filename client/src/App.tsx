@@ -3,6 +3,7 @@ import { Switch, Route, Router, useLocation } from "wouter";
 // Switching to browser routing would need a catch-all redirect on the server.
 import { useHashLocation } from "wouter/use-hash-location";
 import { useEffect } from "react";
+import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
@@ -10,31 +11,51 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
+import Login from "@/pages/Login";
+import { useAuth } from "@/hooks/use-auth";
 import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
 /**
- * Guards the root route: first-time visitors go to /welcome.
+ * Shared auth guard: redirects unauthenticated users to /login.
+ * Renders nothing while the auth check is in progress.
+ */
+function RequireAuth({ children }: { children: ReactNode }) {
+  const [, navigate] = useLocation();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate("/login", { replace: true });
+    }
+  }, [isLoading, isAuthenticated, navigate]);
+
+  if (isLoading || !isAuthenticated) return null;
+
+  return <>{children}</>;
+}
+
+/**
+ * Guards the root route: first-time authenticated visitors go to /welcome.
  * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
  */
 function FirstVisitGuard() {
   const [location, navigate] = useLocation();
 
-  let shouldRedirect = false;
+  let shouldRedirectToWelcome = false;
   try {
-    shouldRedirect =
+    shouldRedirectToWelcome =
       location === "/" && !localStorage.getItem(PC_SEEN_WELCOME_KEY);
   } catch {
-    // If storage is blocked, don't force welcome.
-    shouldRedirect = false;
+    shouldRedirectToWelcome = false;
   }
 
   useEffect(() => {
-    if (shouldRedirect) {
+    if (shouldRedirectToWelcome) {
       navigate("/welcome", { replace: true });
     }
-  }, [shouldRedirect, navigate]);
+  }, [shouldRedirectToWelcome, navigate]);
 
-  if (shouldRedirect) return null;
+  if (shouldRedirectToWelcome) return null;
 
   return <Home />;
 }
@@ -51,9 +72,16 @@ function App() {
         */}
         <Router hook={useHashLocation}>
           <Switch>
-            <Route path="/" component={FirstVisitGuard} />
-            <Route path="/welcome" component={Welcome} />
-            <Route component={NotFound} />
+            <Route path="/login" component={Login} />
+            <Route path="/">
+              <RequireAuth><FirstVisitGuard /></RequireAuth>
+            </Route>
+            <Route path="/welcome">
+              <RequireAuth><Welcome /></RequireAuth>
+            </Route>
+            <Route>
+              <RequireAuth><NotFound /></RequireAuth>
+            </Route>
           </Switch>
         </Router>
       </TooltipProvider>

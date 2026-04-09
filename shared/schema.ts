@@ -1,6 +1,12 @@
 import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+});
 
 export const cleanups = sqliteTable("cleanups", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -11,7 +17,12 @@ export const cleanups = sqliteTable("cleanups", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
 });
 
-export const insertCleanupSchema = createInsertSchema(cleanups).omit({ id: true, createdAt: true });
+export const insertCleanupSchema = z.object({
+  userId: z.string(),
+  originalPrompt: z.string(),
+  fixedPrompt: z.string(),
+  totalScore: z.number().int(),
+});
 export type InsertCleanup = z.infer<typeof insertCleanupSchema>;
 export type Cleanup = typeof cleanups.$inferSelect;
 
