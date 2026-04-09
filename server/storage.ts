@@ -1,4 +1,4 @@
-import { type Cleanup, type InsertCleanup, cleanups } from "@shared/schema";
+import { type Cleanup, type InsertCleanup, cleanups, users } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { desc, eq } from "drizzle-orm";
@@ -15,6 +15,15 @@ sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
 export const db = drizzle(sqlite);
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    username        TEXT    NOT NULL UNIQUE,
+    password        TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch())
+  )
+`);
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS cleanups (

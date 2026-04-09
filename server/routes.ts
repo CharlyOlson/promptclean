@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import Stripe from "stripe";
 import type { WeightedAnswer } from "@shared/schema";
 import crypto from "crypto";
+import { registerAuthRoutes } from "./auth";
 
 // ── Session type augmentation ─────────────────────────────────────────────────
 declare module "express-session" {
@@ -13,6 +14,7 @@ declare module "express-session" {
     isPro?: boolean;
     firstRunAt?: string;
     userId?: string;
+    authUsername?: string;
     /** One-time token stored when creating a Stripe Checkout Session.
      *  Passed as `client_reference_id`; validated and cleared on verify. */
     checkoutToken?: string;
@@ -250,6 +252,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express,
 ): Promise<Server> {
+  // ── Auth routes ─────────────────────────────────────────────────────────────
+  registerAuthRoutes(app);
+
   // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {

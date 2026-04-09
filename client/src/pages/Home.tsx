@@ -2,12 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight } from "lucide-react";
+import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight, LogOut } from "lucide-react";
 import type { Cleanup, WeightedAnswer } from "@shared/schema";
 import QuestionCard from "@/components/QuestionCard";
 import type { OptionState, QuestionOption } from "@/components/QuestionCard";
 import PromptControls, { type PromptConfig } from "@/components/PromptControls";
 import PaywallBanner from "@/components/PaywallBanner";
+import { useAuth } from "@/hooks/use-auth";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
@@ -343,6 +344,7 @@ function ProcessingDots({ activeIndex }: { activeIndex: number }) {
 export default function Home() {
   const { isDark, toggle } = useTheme();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<Stage>("input");
@@ -539,6 +541,11 @@ export default function Home() {
             <Logo />
           </button>
           <div className="flex items-center gap-2">
+            {user && (
+              <span className="text-xs text-muted-foreground/60 px-2 py-1">
+                {user.username}
+              </span>
+            )}
             <a
               href="#/welcome"
               className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors px-2 py-1"
@@ -554,6 +561,16 @@ export default function Home() {
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
+            {user && (
+              <button
+                onClick={() => logout()}
+                className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -695,14 +712,9 @@ export default function Home() {
       <footer className="border-t border-border mt-12">
         <div className="max-w-[720px] mx-auto px-4 py-6 flex flex-col items-center gap-2">
           <p className="text-xs text-muted-foreground italic">signal in, signal out — noise filtered</p>
-          <a
-            href="https://www.perplexity.ai/computer"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-          >
-            Created with Perplexity Computer
-          </a>
+          <span className="text-xs text-muted-foreground/60">
+            Funded by Friendship
+          </span>
         </div>
       </footer>
     </div>

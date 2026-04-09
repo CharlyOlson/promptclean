@@ -10,31 +10,37 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
+import Login from "@/pages/Login";
+import { useAuth } from "@/hooks/use-auth";
 import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
 /**
- * Guards the root route: first-time visitors go to /welcome.
+ * Guards the root route: unauthenticated visitors go to /login.
+ * First-time authenticated visitors go to /welcome.
  * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
  */
 function FirstVisitGuard() {
   const [location, navigate] = useLocation();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  let shouldRedirect = false;
+  let shouldRedirectToWelcome = false;
   try {
-    shouldRedirect =
+    shouldRedirectToWelcome =
       location === "/" && !localStorage.getItem(PC_SEEN_WELCOME_KEY);
   } catch {
-    // If storage is blocked, don't force welcome.
-    shouldRedirect = false;
+    shouldRedirectToWelcome = false;
   }
 
   useEffect(() => {
-    if (shouldRedirect) {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      navigate("/login", { replace: true });
+    } else if (shouldRedirectToWelcome) {
       navigate("/welcome", { replace: true });
     }
-  }, [shouldRedirect, navigate]);
+  }, [isLoading, isAuthenticated, shouldRedirectToWelcome, navigate]);
 
-  if (shouldRedirect) return null;
+  if (isLoading || !isAuthenticated || shouldRedirectToWelcome) return null;
 
   return <Home />;
 }
@@ -52,6 +58,7 @@ function App() {
         <Router hook={useHashLocation}>
           <Switch>
             <Route path="/" component={FirstVisitGuard} />
+            <Route path="/login" component={Login} />
             <Route path="/welcome" component={Welcome} />
             <Route component={NotFound} />
           </Switch>
