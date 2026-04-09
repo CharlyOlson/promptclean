@@ -34,13 +34,25 @@ function rateLimit(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/**
+ * Reject requests that are not Content-Type: application/json.
+ * Prevents CSRF via cross-site form POST (urlencoded bodies).
+ */
+function requireJson(req: Request, res: Response, next: NextFunction) {
+  const ct = req.headers["content-type"] ?? "";
+  if (!ct.includes("application/json")) {
+    return res.status(415).json({ message: "Content-Type must be application/json" });
+  }
+  next();
+}
+
 // ── Password hashing helpers ────────────────────────────────────────────────
 
 function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const salt = crypto.randomBytes(16).toString("hex");
     crypto.scrypt(password, salt, 64, (err, derivedKey) => {
-      if (err) reject(err);
+      if (err) return reject(err);
       resolve(`${salt}:${derivedKey.toString("hex")}`);
     });
   });
@@ -48,10 +60,19 @@ function hashPassword(password: string): Promise<string> {
 
 function verifyPassword(password: string, stored: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
-    const [salt, key] = stored.split(":");
+    const parts = stored.split(":");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      return resolve(false);
+    }
+    const [salt, key] = parts;
     crypto.scrypt(password, salt, 64, (err, derivedKey) => {
-      if (err) reject(err);
-      resolve(derivedKey.toString("hex") === key);
+      if (err) return reject(err);
+      const storedBuf = Buffer.from(key, "hex");
+      // timing-safe comparison to prevent timing attacks
+      if (storedBuf.length !== derivedKey.length) {
+        return resolve(false);
+      }
+      resolve(crypto.timingSafeEqual(derivedKey, storedBuf));
     });
   });
 }
@@ -60,7 +81,7 @@ function verifyPassword(password: string, stored: string): Promise<boolean> {
 
 export function registerAuthRoutes(app: Express) {
   // Register
-  app.post("/api/auth/register", rateLimit, async (req, res) => {
+  app.post("/api/auth/register", requireJson, rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
@@ -115,7 +136,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Login
-  app.post("/api/auth/login", rateLimit, async (req, res) => {
+  app.post("/api/auth/login", requireJson, rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
@@ -166,7 +187,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Logout
-  app.post("/api/auth/logout", (req, res) => {
+  app.post("/api/auth/logout", requireJson, (req, res) => {
     req.session.destroy((err) => {
       if (err) {
         console.error("Logout error:", err);

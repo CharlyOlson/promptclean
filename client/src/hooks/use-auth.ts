@@ -41,7 +41,7 @@ export function useAuth() {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/auth/logout");
+      await apiRequest("POST", "/api/auth/logout", {});
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/auth/me"], null);

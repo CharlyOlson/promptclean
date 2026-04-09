@@ -7,6 +7,7 @@
  */
 
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -19,7 +20,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLocalError("");
 
