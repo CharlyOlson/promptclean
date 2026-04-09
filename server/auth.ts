@@ -210,12 +210,21 @@ export function registerAuthRoutes(app: Express) {
 
   // Get current user
   app.get("/api/auth/me", (req, res) => {
-    if (!req.session.authUsername) {
+    const username = req.session.authUsername;
+    const userId = req.session.userId;
+
+    if (
+      typeof username !== "string" ||
+      !username ||
+      typeof userId !== "string" ||
+      !userId
+    ) {
       return res.status(401).json({ message: "Not authenticated" });
     }
+
     return res.json({
-      id: req.session.userId,
-      username: req.session.authUsername,
+      id: userId,
+      username,
     });
   });
 
