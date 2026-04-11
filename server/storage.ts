@@ -1,4 +1,7 @@
-import { type Cleanup, type InsertCleanup, cleanups } from "@shared/schema";
+import {
+  type Cleanup, type InsertCleanup, cleanups,
+  type ApiUsage, type InsertApiUsage, apiUsage,
+} from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { desc, eq } from "drizzle-orm";
@@ -33,6 +36,18 @@ sqlite.exec(`
     fixed_prompt    TEXT    NOT NULL,
     total_score     INTEGER NOT NULL,
     created_at      INTEGER NOT NULL
+  )
+`);
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS api_usage (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT    NOT NULL,
+    endpoint        TEXT    NOT NULL,
+    model           TEXT    NOT NULL,
+    tokens_used     INTEGER NOT NULL DEFAULT 0,
+    cost_estimate   REAL    NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL DEFAULT (unixepoch())
   )
 `);
 
@@ -89,6 +104,8 @@ sqlite.exec(`
 export interface IStorage {
   createCleanup(cleanup: InsertCleanup): Promise<Cleanup>;
   getRecentCleanups(userId: string, limit: number): Promise<Cleanup[]>;
+  logApiUsage(data: InsertApiUsage): Promise<ApiUsage>;
+  getApiUsageHistory(userId: string, limit: number): Promise<ApiUsage[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -102,6 +119,20 @@ export class DatabaseStorage implements IStorage {
       .from(cleanups)
       .where(eq(cleanups.userId, userId))
       .orderBy(desc(cleanups.createdAt))
+      .limit(limit)
+      .all();
+  }
+
+  async logApiUsage(data: InsertApiUsage): Promise<ApiUsage> {
+    return db.insert(apiUsage).values(data).returning().get();
+  }
+
+  async getApiUsageHistory(userId: string, limit: number): Promise<ApiUsage[]> {
+    return db
+      .select()
+      .from(apiUsage)
+      .where(eq(apiUsage.userId, userId))
+      .orderBy(desc(apiUsage.createdAt))
       .limit(limit)
       .all();
   }

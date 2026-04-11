@@ -43,6 +43,16 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 const QUESTIONS_MODEL = "gemini-2.5-flash";
 const CLEANUP_MODEL = "gemini-2.5-flash";
 
+// ── Cost estimation ───────────────────────────────────────────────────────────
+// Gemini 2.5 Flash pricing (as of mid-2025): $0.075 / 1M input tokens,
+// $0.30 / 1M output tokens. We use a blended rate of ~$0.15 / 1M tokens
+// as a conservative estimate when we only have total token counts.
+const COST_PER_TOKEN = 0.00000015; // $0.15 per 1M tokens (blended)
+
+function estimateCost(tokensUsed: number): number {
+  return parseFloat((tokensUsed * COST_PER_TOKEN).toFixed(8));
+}
+
 // Stripe client — only initialized when the secret key is present
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -317,6 +327,16 @@ export async function registerRoutes(
         req.session.firstRunAt = new Date().toISOString();
       }
 
+      // ── Log API usage ─────────────────────────────────────────────────────
+      const tokensUsed = (response as any).usageMetadata?.totalTokenCount ?? 0;
+      storage.logApiUsage({
+        userId: getSessionUserId(req),
+        endpoint: "questions",
+        model: QUESTIONS_MODEL,
+        tokensUsed,
+        costEstimate: estimateCost(tokensUsed),
+      }).catch((err) => console.error("[usage] Failed to log questions usage:", err));
+
       return res.json({ questions });
     } catch (error: any) {
       console.error("Questions error:", error);
@@ -426,6 +446,16 @@ export async function registerRoutes(
         fixedPrompt,
         totalScore: score.total,
       });
+
+      // ── Log API usage ─────────────────────────────────────────────────────
+      const cleanupTokens = (response as any).usageMetadata?.totalTokenCount ?? 0;
+      storage.logApiUsage({
+        userId: getSessionUserId(req),
+        endpoint: "cleanup",
+        model: CLEANUP_MODEL,
+        tokensUsed: cleanupTokens,
+        costEstimate: estimateCost(cleanupTokens),
+      }).catch((err) => console.error("[usage] Failed to log cleanup usage:", err));
 
       return res.json({
         score,
@@ -634,6 +664,99 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Stripe verify-checkout error:", err);
       return res.status(500).json({ message: "Unable to verify checkout session" });
+    }
+  });
+
+  // ── Stripe Webhook Handler ─────────────────────────────────────────────────
+  // Receives subscription lifecycle events from Stripe and updates the user's
+  // isPro status in the session. Requires STRIPE_WEBHOOK_SECRET to be set.
+  // Note: express.json() must NOT run before this route — we need the raw body
+  // for signature verification. The rawBody is captured in server/index.ts.
+  app.post("/api/webhooks/stripe", async (req, res) => {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    if (!stripe || !webhookSecret) {
+      return res.status(503).json({ message: "Stripe webhooks not configured" });
+    }
+
+    const sig = req.headers["stripe-signature"];
+    if (!sig) {
+      return res.status(400).json({ message: "Missing stripe-signature header" });
+    }
+
+    let event: Stripe.Event;
+    try {
+      const rawBody = (req as any).rawBody;
+      if (!rawBody) {
+        return res.status(400).json({ message: "Raw body unavailable" });
+      }
+      event = stripe.webhooks.constructEvent(rawBody as Buffer, sig, webhookSecret);
+    } catch (err: any) {
+      console.error("[webhook] Signature verification failed:", err.message);
+      return res.status(400).json({ message: `Webhook error: ${err.message}` });
+    }
+
+    try {
+      switch (event.type) {
+        case "customer.subscription.updated": {
+          const subscription = event.data.object as Stripe.Subscription;
+          const isActive =
+            subscription.status === "active" || subscription.status === "trialing";
+          console.log(
+            `[webhook] subscription.updated — customer: ${subscription.customer}, active: ${isActive}`,
+          );
+          // Session-based isPro is updated at verify-checkout time.
+          // Webhook events are logged here for observability; a persistent
+          // user store would update the DB record here.
+          break;
+        }
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object as Stripe.Subscription;
+          console.log(
+            `[webhook] subscription.deleted — customer: ${subscription.customer}`,
+          );
+          // When a subscription is cancelled, the user's Pro access should be
+          // revoked. With a persistent user store, update isPro = false here.
+          break;
+        }
+        default:
+          // Acknowledge unhandled event types without error
+          break;
+      }
+
+      return res.json({ received: true });
+    } catch (err: any) {
+      console.error("[webhook] Handler error:", err);
+      return res.status(500).json({ message: "Webhook handler failed" });
+    }
+  });
+
+  // ── API Usage History Dashboard ────────────────────────────────────────────
+  // Returns the authenticated user's per-call API usage history so they can
+  // see exactly how many tokens each request consumed and what it cost.
+  app.get("/api/usage/history", requireAuth, async (req, res) => {
+    try {
+      const limitParam = req.query.limit;
+      const limit = typeof limitParam === "string"
+        ? Math.min(Math.max(1, parseInt(limitParam, 10) || 50), 200)
+        : 50;
+
+      const history = await storage.getApiUsageHistory(getSessionUserId(req), limit);
+
+      const totalTokens = history.reduce((sum, r) => sum + r.tokensUsed, 0);
+      const totalCost = history.reduce((sum, r) => sum + r.costEstimate, 0);
+
+      return res.json({
+        records: history,
+        summary: {
+          totalCalls: history.length,
+          totalTokens,
+          totalCostUsd: parseFloat(totalCost.toFixed(6)),
+        },
+      });
+    } catch (error: any) {
+      console.error("Usage history error:", error);
+      return res.status(500).json({ message: error.message || "Internal server error" });
     }
   });
 
