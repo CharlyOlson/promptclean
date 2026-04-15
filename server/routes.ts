@@ -47,7 +47,7 @@ function getSession(req: Request, res: Response): string {
 }
 
 // ── Gemini helpers ─────────────────────────────────────────────────────────────
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 const IMAGEN_MODEL = "imagen-3.0-generate-002";
 
 async function geminiText(prompt: string, system: string): Promise<string> {
