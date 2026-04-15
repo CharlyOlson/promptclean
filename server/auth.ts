@@ -12,6 +12,17 @@ import { users } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
+    authUsername?: string;
+    runs?: number;
+    firstRunAt?: number;
+    isPro?: boolean;
+    checkoutToken?: string;
+  }
+}
+
 // ── Simple in-memory rate limiter ───────────────────────────────────────────
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_LOGIN_ATTEMPTS = 10;
@@ -122,7 +133,7 @@ function regenerateSession(
 
 export function registerAuthRoutes(app: Express) {
   // Register
-  app.post("/api/auth/register", requireJson, rateLimit, async (req, res) => {
+  app.post("/api/auth/register", rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
@@ -170,7 +181,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Login
-  app.post("/api/auth/login", requireJson, rateLimit, async (req, res) => {
+  app.post("/api/auth/login", rateLimit, async (req, res) => {
     const { username, password } = req.body ?? {};
 
     if (
@@ -229,7 +240,7 @@ export function registerAuthRoutes(app: Express) {
   });
 
   // Logout
-  app.post("/api/auth/logout", requireJson, (req, res) => {
+  app.post("/api/auth/logout", (req, res) => {
     req.session.destroy((err) => {
       if (err) {
         console.error("Logout error:", err);
