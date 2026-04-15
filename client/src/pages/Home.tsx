@@ -53,14 +53,22 @@ function toWeightedPayload(questionId: string, states: OptionState[]): WeightedA
 }
 
 interface CleanupResult {
-  score: { specificity: number; context: number; constraints: number; outputDef: number; total: number };
+  // A
   fixedPrompt: string;
   changeLog: string[];
-  deltaComment: string;
-  patternTag?: string;
-  nodeOutputs: { alpha: string; beta: string; gamma: any; delta: any };
-  gemini: { fixedPromptOutput: string; originalPromptOutput: string };
+  foil: { first: string; outer: string; inner: string; last: string };
+  pos: { nouns: string[]; verbs: string[]; adjectives: string[] };
+  // B
+  fullResponse: string;
   media: { generatedImageUrl: string | null; hasImageInput: boolean; hasVideoInput: boolean };
+  // C
+  score: { specificity: number; context: number; constraints: number; outputDef: number; total: number };
+  deltaComment: string;
+  didWell: string[];
+  toImprove: string[];
+  patternTag?: string;
+  // internals
+  nodeOutputs: { alpha: string; beta: string; gamma: any; delta: any };
   usage: { runsUsed: number; limit: number; isPro: boolean; runsRemaining: number };
 }
 
@@ -181,6 +189,185 @@ function ScoreBar({ label, value, max, delay }: { label: string; value: number; 
 }
 
 // ── Signal Score Panel ────────────────────────────────────────────────────────
+// ── Panel A — Cleaned Prompt ─────────────────────────────────────────────────────
+function PanelA({ result }: { result: CleanupResult }) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 space-y-4" data-testid="panel-a">
+      <div className="flex items-center gap-3">
+        <span className="font-display text-xl font-black" style={{ color: "hsl(174 100% 38%)" }}>A</span>
+        <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Cleaned Prompt</h3>
+      </div>
+
+      <FixedPromptBlock prompt={result.fixedPrompt} />
+
+      {/* FOIL + POS breakdown toggle */}
+      <button
+        onClick={() => setShowBreakdown((v) => !v)}
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+        data-testid="toggle-breakdown"
+      >
+        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showBreakdown ? "rotate-90" : ""}`} />
+        Show FOIL breakdown
+      </button>
+
+      {showBreakdown && (
+        <div className="space-y-3 pt-1">
+          {/* FOIL */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {([
+              ["F — First (subject)", result.foil?.first],
+              ["O — Outer (action)", result.foil?.outer],
+              ["I — Inner (modifier)", result.foil?.inner],
+              ["L — Last (target)", result.foil?.last],
+            ] as [string, string][]).map(([label, val]) => (
+              <div key={label} className="rounded border border-border bg-muted/30 px-3 py-2">
+                <div className="text-muted-foreground mb-0.5 font-medium">{label}</div>
+                <div className="text-foreground">{val || <span className="italic text-muted-foreground/50">none</span>}</div>
+              </div>
+            ))}
+          </div>
+          {/* POS */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {result.pos?.nouns?.map((w: string) => (
+              <span key={w} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary font-medium">{w}</span>
+            ))}
+            {result.pos?.verbs?.map((w: string) => (
+              <span key={w} className="px-2 py-0.5 rounded-full bg-amber-500/15 font-medium" style={{ color: "hsl(38 85% 52%)" }}>{w}</span>
+            ))}
+            {result.pos?.adjectives?.map((w: string) => (
+              <span key={w} className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{w}</span>
+            ))}
+          </div>
+          <div className="flex gap-3 text-xs text-muted-foreground">
+            <span><span className="inline-block w-2 h-2 rounded-full bg-primary/50 mr-1" />noun</span>
+            <span><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "hsl(38 85% 52% / 0.5)" }} />verb</span>
+            <span><span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/30 mr-1" />adjective</span>
+          </div>
+          {/* Change log */}
+          {result.changeLog?.length > 0 && (
+            <ul className="space-y-1.5 border-l-2 border-primary/30 pl-3">
+              {result.changeLog.map((item: string, i: number) => (
+                <li key={i} className="text-xs text-foreground/80 leading-relaxed">{item}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Panel B — Full AI Response ──────────────────────────────────────────────
+function PanelB({ result }: { result: CleanupResult }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(result.fullResponse); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 space-y-4" data-testid="panel-b">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="font-display text-xl font-black" style={{ color: "hsl(38 85% 52%)" }}>B</span>
+          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">AI Response</h3>
+        </div>
+        <button onClick={copy} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+          {copied ? <><Check className="w-3.5 h-3.5 text-primary" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">Gemini's full response to the cleaned prompt — doing the actual task.</p>
+
+      {result.media?.generatedImageUrl && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Generated image</span>
+            <a href={result.media.generatedImageUrl} download="promptclean-generated.png"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              <Download className="w-3.5 h-3.5" />Save
+            </a>
+          </div>
+          <img src={result.media.generatedImageUrl} alt="Generated" className="w-full rounded-md object-cover max-h-80" />
+        </div>
+      )}
+
+      {result.fullResponse ? (
+        <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+          {result.fullResponse}
+        </div>
+      ) : (
+        <div className="rounded-md bg-muted/40 p-4 text-sm text-muted-foreground italic">
+          Response loading… Gemini is processing the cleaned prompt.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Panel C — Score + Evaluation ─────────────────────────────────────────────
+function PanelC({ result }: { result: CleanupResult }) {
+  const { score, didWell, toImprove, deltaComment } = result;
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 space-y-5" data-testid="panel-c">
+      <div className="flex items-center gap-3">
+        <span className="font-display text-xl font-black" style={{ color: "hsl(280 60% 60%)" }}>C</span>
+        <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Score + Evaluation</h3>
+      </div>
+
+      {/* Score */}
+      <div className="space-y-1">
+        <div className="flex items-end gap-3 mb-3">
+          <span className="text-4xl font-display font-black tabular-nums" style={{ color: "hsl(38 85% 52%)" }} data-testid="total-score">
+            {score.total}
+          </span>
+          <span className="text-base text-muted-foreground font-display mb-1">/ 100</span>
+          <span className="text-xs text-muted-foreground mb-1.5">original prompt scored</span>
+        </div>
+        <ScoreBar label="Specificity" value={score.specificity} max={25} delay={100} />
+        <ScoreBar label="Context" value={score.context} max={25} delay={220} />
+        <ScoreBar label="Constraints" value={score.constraints} max={25} delay={340} />
+        <ScoreBar label="Output Def." value={score.outputDef} max={25} delay={460} />
+      </div>
+
+      {/* Did well / To improve */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+          <p className="text-xs font-display font-bold text-primary uppercase tracking-wider mb-2">What you got right</p>
+          <ul className="space-y-1.5">
+            {(didWell ?? []).map((item: string, i: number) => (
+              <li key={i} className="text-xs text-foreground/90 leading-relaxed flex gap-1.5">
+                <span className="text-primary shrink-0 mt-0.5">✓</span>{item}
+              </li>
+            ))}
+            {(!didWell || didWell.length === 0) && (
+              <li className="text-xs text-muted-foreground italic">Nothing specific flagged.</li>
+            )}
+          </ul>
+        </div>
+        <div className="rounded-md border border-amber-500/30 p-3" style={{ background: "hsl(38 85% 52% / 0.05)" }}>
+          <p className="text-xs font-display font-bold uppercase tracking-wider mb-2" style={{ color: "hsl(38 85% 52%)" }}>What would improve it</p>
+          <ul className="space-y-1.5">
+            {(toImprove ?? []).map((item: string, i: number) => (
+              <li key={i} className="text-xs text-foreground/90 leading-relaxed flex gap-1.5">
+                <span className="shrink-0 mt-0.5" style={{ color: "hsl(38 85% 52%)" }}>→</span>{item}
+              </li>
+            ))}
+            {(!toImprove || toImprove.length === 0) && (
+              <li className="text-xs text-muted-foreground italic">No improvements flagged.</li>
+            )}
+          </ul>
+        </div>
+      </div>
+
+      {deltaComment && (
+        <p className="text-xs text-muted-foreground italic border-t border-border pt-3">{deltaComment}</p>
+      )}
+    </div>
+  );
+}
+
 function SignalScore({ score }: { score: CleanupResult["score"] }) {
   return (
     <div className="rounded-lg border border-border bg-card p-5" data-testid="signal-score">
@@ -623,7 +810,7 @@ export default function Home() {
       setActiveNode(4);
       setResult(data);
       setStage("done");
-      if (data.usage) setUsageInfo({ runs: data.usage.runsUsed, limit: data.usage.limit, isPro: data.usage.isPro });
+      if (data.usage) setUsageInfo({ runs: data.usage.runsUsed ?? 0, limit: data.usage.limit, isPro: data.usage.isPro });
       queryClient.invalidateQueries({ queryKey: ["/api/history"] });
     },
     onError: (err: Error & { status?: number }) => {
@@ -961,40 +1148,10 @@ export default function Home() {
         {/* ── Stage: Done — Results ── */}
         {stage === "done" && result && (
           <div className="space-y-4 mt-2" data-testid="results-section">
-            <FixedPromptBlock prompt={result.fixedPrompt} />
-
-            {/* Generated image */}
-            {result.media?.generatedImageUrl && (
-              <div className="rounded-lg border border-border bg-card p-5 space-y-3" data-testid="generated-image">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Generated Image</h3>
-                  <a
-                    href={result.media.generatedImageUrl}
-                    download="promptclean-generated.png"
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Save
-                  </a>
-                </div>
-                <img
-                  src={result.media.generatedImageUrl}
-                  alt="Generated from cleaned prompt"
-                  className="w-full rounded-md object-cover max-h-80"
-                />
-                <p className="text-xs text-muted-foreground">Generated using the cleaned prompt via Imagen 3.</p>
-              </div>
-            )}
-
-            {result.gemini && (
-              <GeminiPanel
-                fixed={result.gemini.fixedPromptOutput}
-                original={result.gemini.originalPromptOutput}
-              />
-            )}
-            <SignalScore score={result.score} />
-            <ChangeLog items={result.changeLog} comment={result.deltaComment} />
+            <PanelA result={result} />
+            <PanelB result={result} />
+            <PanelC result={result} />
             <NodeOutputs outputs={result.nodeOutputs} />
-
             <button
               onClick={handleReset}
               data-testid="button-new-cleanup"

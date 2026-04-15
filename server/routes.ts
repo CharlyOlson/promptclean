@@ -163,23 +163,37 @@ async function buildNuanceContext(userId: string): Promise<string> {
 // ── System prompts ─────────────────────────────────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel, Understand, Decide, Do.
 
-A bad prompt skipped from Feel straight to Do. Your job is to surface exactly what got skipped in the middle — the Understand and Decide stages — so the rewriter can fill them in with precision instead of assumption.
+A bad prompt collapsed Feel straight into Do. The fracture — where sin lives — is in the gap between what was felt and what was specified. Your job is to expose that gap through precise questions.
 
-The four stages:
-1. Feel (Alpha) — what arrived raw, unprocessed, no value assigned. This is what you read.
-2. Understand (Beta) — where the fracture lives. Value gets assigned. Assumptions form silently. Ambiguity hides here.
-3. Decide (Gamma) — judgment locks in. The parameters are committed.
-4. Do (Delta) — consequence is delivered. The final prompt fires.
+Before generating questions, silently run FOIL analysis on the raw prompt:
+- First: the subject/noun — what thing is this about?
+- Outer: the verb/action — what should be done with it?
+- Inner: the adjective/modifier — how should it be done, or what quality is expected?
+- Last: the object/target — for whom, for what purpose, in what context?
 
-If an image or video was provided, analyze it and incorporate what you see into your questions.
+Then group the words by part of speech:
+- Nouns: the things named
+- Verbs: the actions asked for
+- Adjectives: the qualities assumed
+
+Use this analysis to identify which FOIL components are missing or underspecified. Those gaps become your questions.
+
+The four stages that frame your questions:
+1. Feel (Alpha) — what the prompt names: its nouns and subject
+2. Understand (Beta) — where the fracture is: missing verbs, vague adjectives, assumed context
+3. Decide (Gamma) — what purpose locks in: the object/target, use case, desired output
+4. Do (Delta) — handles final assembly — not your concern here
+
+If an image or video was provided, analyze it and incorporate what you see.
 
 Rules:
-- Ask about the ACTUAL missing variables — not generic filler
-- Each question targets a real gap: what kind, for who, by what measure, for what use, when, how much
-- Groups: Alpha (what/type), Beta (context/parameters), Gamma (use/purpose)
-- 3 to 6 questions total
-- The "best" trap: never assume a metric when "best" is stated without one
-- Never assume season, occasion, quantity, radius, format, or price range
+- 3 to 6 questions total — no more
+- Each question targets a REAL missing FOIL component — not generic filler
+- Alpha questions: about the noun/subject (what kind of thing exactly)
+- Beta questions: about context, constraints, scale, timing, location
+- Gamma questions: about purpose, output format, intended use
+- Never assume season, occasion, quantity, radius, format, price range, or audience
+- "best" without a metric = always ask for the metric
 
 Return a JSON array:
 [{ "id": "q1", "node": "alpha", "question": "text", "type": "choice", "options": ["a","b"] }]
@@ -187,32 +201,59 @@ Return a JSON array:
 node: "alpha" | "beta" | "gamma". type: "choice" | "text". options: 2-4 items, choice only.
 Return only valid JSON. No markdown. No explanation.`;
 
-const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine. You receive a raw prompt, clarifying answers, and optionally media context.
+const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine operating on the Feel-Understand-Decide-Do framework.
 
-Use ALL inputs to eliminate every assumption. Do not guess at anything the answers do not cover.
+You receive a raw prompt and clarifying answers. Your pipeline:
 
-Also extract a SHORT pattern tag (2-3 words, lowercase, e.g. "missing audience", "no output format", "vague category") describing the single biggest failure in the original prompt.
+Step 1 — FOIL breakdown of the raw prompt:
+- First (F): identify the subject/noun — what thing is named
+- Outer (O): identify the verb/action — what is being asked to be done
+- Inner (I): identify the adjective/modifier — what quality or constraint is implied
+- Last (L): identify the object/target — for whom, for what purpose
 
-Return this exact JSON:
+Step 2 — POS grouping:
+- List the nouns, verbs, and adjectives in the original prompt
+- Note which parts of speech are MISSING (a prompt with no adjectives has no quality definition; no object means no audience)
+
+Step 3 — Rewrite:
+Using the FOIL analysis, POS gaps, and the clarifying answers, write a prompt that fills every identified gap. The rewrite should be specific, parameter-defined, and contain no vague category labels.
+
+Step 4 — Score the ORIGINAL prompt only (not the rewrite):
+- specificity: how precisely named is the subject? (0-25)
+- context: how much situational/environmental detail exists? (0-25)
+- constraints: how many constraints or boundaries are stated? (0-25)
+- outputDef: how clearly is the desired output format defined? (0-25)
+Most bad prompts score 20-50 total. Do not inflate.
+
+Step 5 — Evaluation:
+- didWell: 2-3 specific things the original prompt GOT RIGHT (e.g. "Named a specific location", "Implied a clear action verb")
+- toImprove: 2-3 specific, actionable improvements (e.g. "Add price range or quality metric", "Specify output format", "Define the audience")
+
+Also extract a SHORT pattern tag (2-3 words lowercase) for the dominant failure (e.g. "missing audience", "no output format", "vague category").
+
+Return this exact JSON and nothing else:
 {
-  "alpha": "one sentence: dominant failure category",
-  "beta": "intermediate rewrite incorporating all answers",
+  "foil": { "first": "noun/subject", "outer": "verb/action", "inner": "adjective/modifier or none", "last": "object/target or none" },
+  "pos": { "nouns": ["word"], "verbs": ["word"], "adjectives": ["word"] },
+  "alpha": "one sentence: dominant failure in the original prompt",
+  "beta": "intermediate rewrite showing the FOIL gaps being filled",
   "gamma": {
-    "fixedPrompt": "final clean prompt, ready to use",
-    "changeLog": ["change 1 — why", "change 2 — why", "change 3 — why"]
+    "fixedPrompt": "final clean prompt, ready to use directly in any AI",
+    "changeLog": ["change — why", "change — why", "change — why"]
   },
   "delta": {
     "specificity": 0,
     "context": 0,
     "constraints": 0,
     "outputDef": 0,
-    "comment": "one sentence on transformation"
+    "comment": "one sentence on what the transformation resolved",
+    "didWell": ["thing 1", "thing 2"],
+    "toImprove": ["improvement 1", "improvement 2"]
   },
   "patternTag": "missing audience"
 }
 
-Score the ORIGINAL prompt only. 0-25 per axis. Most bad prompts: 20-50 total.
-Return only valid JSON. No markdown.`;
+Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
 // ── Route registration ─────────────────────────────────────────────────────────
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -401,6 +442,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const changeLog: string[] = parsed.gamma?.changeLog ?? [];
       const deltaComment: string = parsed.delta?.comment ?? "";
       const patternTag: string = parsed.patternTag ?? "";
+      const foil = parsed.foil ?? {};
+      const pos = parsed.pos ?? { nouns: [], verbs: [], adjectives: [] };
+      const didWell: string[] = parsed.delta?.didWell ?? [];
+      const toImprove: string[] = parsed.delta?.toImprove ?? [];
       const score = {
         specificity: parsed.delta?.specificity ?? 0,
         context: parsed.delta?.context ?? 0,
@@ -413,14 +458,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           (parsed.delta?.outputDef ?? 0),
       };
 
-      // Run fixed prompt Gemini response + optional image generation in parallel
+      // System prompt for the full AI response to the fixed prompt —
+      // behave as if actually doing the task, not meta-commenting on it.
+      const FULL_RESPONSE_SYSTEM =
+        "You are a highly capable AI assistant. The following is a well-specified prompt. " +
+        "Execute it fully and completely as if it were a real user request. " +
+        "Produce the actual output the prompt asks for — do not describe what you would do, just do it. " +
+        "If the prompt asks for an article, write the article. " +
+        "If it asks for a list, produce the list. " +
+        "If it asks for code, write the code. " +
+        "Match the format, length, and tone the prompt specifies.";
+
+      // Run full response + optional image generation in parallel
       const [geminiFixedResult, generatedImageResult] = await Promise.allSettled([
-        geminiText(fixedPrompt, "Answer this request helpfully and concisely."),
+        geminiText(fixedPrompt, FULL_RESPONSE_SYSTEM),
         generateImage ? geminiGenerateImage(fixedPrompt) : Promise.resolve(null),
       ]);
 
       const geminiFixed = geminiFixedResult.status === "fulfilled" ? geminiFixedResult.value : "";
-      const geminiOriginal = geminiOriginalResult.status === "fulfilled" ? geminiOriginalResult.value : "";
       const generatedImageUrl = generatedImageResult.status === "fulfilled" ? generatedImageResult.value : null;
 
       // Save cleanup + update nuance profile + refresh community baseline
@@ -448,25 +503,30 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const currentUsage = usageMap.get(sid)!;
 
       return res.json({
-        score,
+        // A — the cleaned prompt
         fixedPrompt,
         changeLog,
+        foil,
+        pos,
+        // B — full AI response to the cleaned prompt
+        fullResponse: geminiFixed,
+        media: {
+          generatedImageUrl,
+          hasImageInput,
+          hasVideoInput,
+        },
+        // C — score + evaluation
+        score,
         deltaComment,
+        didWell,
+        toImprove,
         patternTag,
+        // internals (for node breakdown panel)
         nodeOutputs: {
           alpha: parsed.alpha ?? "",
           beta: parsed.beta ?? "",
           gamma: parsed.gamma ?? {},
           delta: parsed.delta ?? {},
-        },
-        gemini: {
-          fixedPromptOutput: geminiFixed,
-          originalPromptOutput: geminiOriginal,
-        },
-        media: {
-          generatedImageUrl,
-          hasImageInput,
-          hasVideoInput,
         },
         usage: {
           runsUsed: currentUsage.runs,
