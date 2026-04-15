@@ -59,10 +59,22 @@ function getSession(req: Request, res: Response): string {
 const GEMINI_MODEL = "gemini-2.5-flash";
 const IMAGEN_MODEL = "imagen-3.0-generate-002";
 
-async function geminiText(prompt: string, system: string): Promise<string> {
-  const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+async function geminiText(prompt: string, system: string, retries = 2): Promise<string> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } catch (err: any) {
+      const is503 = err?.status === 503 || err?.message?.includes("503");
+      if (is503 && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return "";
 }
 
 async function geminiVision(
@@ -70,20 +82,29 @@ async function geminiVision(
   system: string,
   imageBase64?: string,
   imageMime?: string,
-  videoUrl?: string
+  videoUrl?: string,
+  retries = 2
 ): Promise<string> {
-  const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
-  const parts: any[] = [{ text }];
-
-  if (imageBase64 && imageMime) {
-    parts.push({ inlineData: { mimeType: imageMime, data: imageBase64 } });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
+      const parts: any[] = [{ text }];
+      if (imageBase64 && imageMime)
+        parts.push({ inlineData: { mimeType: imageMime, data: imageBase64 } });
+      if (videoUrl)
+        parts.push({ text: `\n\nVideo URL to analyze: ${videoUrl}` });
+      const result = await model.generateContent({ contents: [{ role: "user", parts }] });
+      return result.response.text();
+    } catch (err: any) {
+      const is503 = err?.status === 503 || err?.message?.includes("503");
+      if (is503 && attempt < retries) {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
   }
-  if (videoUrl) {
-    parts.push({ text: `\n\nVideo URL to analyze: ${videoUrl}` });
-  }
-
-  const result = await model.generateContent({ contents: [{ role: "user", parts }] });
-  return result.response.text();
+  return "";
 }
 
 async function geminiGenerateImage(prompt: string): Promise<string | null> {
