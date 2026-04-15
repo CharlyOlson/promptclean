@@ -59,22 +59,48 @@ function getSession(req: Request, res: Response): string {
 const GEMINI_MODEL = "gemini-2.5-flash";
 const IMAGEN_MODEL = "imagen-3.0-generate-002";
 
-async function geminiText(prompt: string, system: string, retries = 2): Promise<string> {
+// Serial queue — ensures calls fire one at a time, never stacking concurrent
+// requests from the same run which triggers 429 rate limits immediately.
+let geminiQueue = Promise.resolve();
+function queueGemini<T>(fn: () => Promise<T>): Promise<T> {
+  const result = geminiQueue.then(() => fn());
+  geminiQueue = result.then(() => {}, () => {});
+  return result;
+}
+
+// Exponential backoff on 429 (rate limit) and 503 (overload)
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
-      const result = await model.generateContent(prompt);
-      return result.response.text();
+      return await fn();
     } catch (err: any) {
-      const is503 = err?.status === 503 || err?.message?.includes("503");
-      if (is503 && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      const msg = String(err?.message ?? "");
+      const status = err?.status ?? 0;
+      const isRetryable =
+        status === 429 || status === 503 ||
+        msg.includes("429") || msg.includes("503") ||
+        msg.includes("quota") || msg.includes("rate") ||
+        msg.includes("high demand") || msg.includes("too many");
+      if (isRetryable && attempt < retries) {
+        const wait = 2000 * Math.pow(2, attempt); // 2s, 4s, 8s
+        console.warn(`Gemini retry ${attempt + 1}/${retries} in ${wait}ms — ${msg.slice(0, 80)}`);
+        await new Promise((r) => setTimeout(r, wait));
         continue;
       }
       throw err;
     }
   }
-  return "";
+  throw new Error("Gemini retry limit exceeded");
+}
+
+async function geminiText(prompt: string, system: string): Promise<string> {
+  return queueGemini(() =>
+    withRetry(async () => {
+      const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    })
+  );
 }
 
 async function geminiVision(
@@ -82,11 +108,10 @@ async function geminiVision(
   system: string,
   imageBase64?: string,
   imageMime?: string,
-  videoUrl?: string,
-  retries = 2
+  videoUrl?: string
 ): Promise<string> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
+  return queueGemini(() =>
+    withRetry(async () => {
       const model = genai.getGenerativeModel({ model: GEMINI_MODEL, systemInstruction: system });
       const parts: any[] = [{ text }];
       if (imageBase64 && imageMime)
@@ -95,16 +120,8 @@ async function geminiVision(
         parts.push({ text: `\n\nVideo URL to analyze: ${videoUrl}` });
       const result = await model.generateContent({ contents: [{ role: "user", parts }] });
       return result.response.text();
-    } catch (err: any) {
-      const is503 = err?.status === 503 || err?.message?.includes("503");
-      if (is503 && attempt < retries) {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-        continue;
-      }
-      throw err;
-    }
-  }
-  return "";
+    })
+  );
 }
 
 async function geminiGenerateImage(prompt: string): Promise<string | null> {
@@ -424,16 +441,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const cleanupInput = `Raw prompt: "${prompt.trim()}"${answersBlock}${mediaNote}`;
 
-      // Run cleanup + original Gemini response in parallel
-      const [cleanupResult, geminiOriginalResult] = await Promise.allSettled([
-        geminiVision(cleanupInput, systemWithNuance, imageBase64, imageMime, videoUrl),
-        geminiText(prompt.trim(), "Answer this request helpfully and concisely."),
-      ]);
+      // Run cleanup first, then full response sequentially
+      // (parallel would stack 3 concurrent Gemini calls and trigger 429)
+      const cleanupRaw = await geminiVision(cleanupInput, systemWithNuance, imageBase64, imageMime, videoUrl);
 
-      if (cleanupResult.status === "rejected")
-        throw new Error("Cleanup failed: " + cleanupResult.reason?.message);
-
-      const cleanedJson = cleanupResult.value.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const cleanedJson = cleanupRaw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
       let parsed: any;
       try { parsed = JSON.parse(cleanedJson); }
       catch { return res.status(500).json({ message: "Failed to parse cleanup response" }); }
@@ -469,14 +481,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         "If it asks for code, write the code. " +
         "Match the format, length, and tone the prompt specifies.";
 
-      // Run full response + optional image generation in parallel
-      const [geminiFixedResult, generatedImageResult] = await Promise.allSettled([
-        geminiText(fixedPrompt, FULL_RESPONSE_SYSTEM),
-        generateImage ? geminiGenerateImage(fixedPrompt) : Promise.resolve(null),
-      ]);
+      // Sequential — queue handles rate limiting, no parallel stacking
+      let geminiFixed = "";
+      try { geminiFixed = await geminiText(fixedPrompt, FULL_RESPONSE_SYSTEM); }
+      catch (e: any) { console.error("Full response failed (non-fatal):", e.message); }
 
-      const geminiFixed = geminiFixedResult.status === "fulfilled" ? geminiFixedResult.value : "";
-      const generatedImageUrl = generatedImageResult.status === "fulfilled" ? generatedImageResult.value : null;
+      let generatedImageUrl: string | null = null;
+      if (generateImage) {
+        try { generatedImageUrl = await geminiGenerateImage(fixedPrompt); }
+        catch (e: any) { console.error("Image generation failed (non-fatal):", e.message); }
+      }
 
       // Save cleanup + update nuance profile + refresh community baseline
       await Promise.all([
