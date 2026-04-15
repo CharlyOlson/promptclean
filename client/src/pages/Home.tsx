@@ -585,7 +585,7 @@ export default function Home() {
       setActiveNode(4);
       setResult(data);
       setStage("done");
-      if (data.usage) setUsageInfo(data.usage);
+      if (data.usage) setUsageInfo({ runs: data.usage.runsUsed, limit: data.usage.limit, isPro: data.usage.isPro });
       queryClient.invalidateQueries({ queryKey: ["/api/history"] });
     },
     onError: (err: Error & { status?: number }) => {
