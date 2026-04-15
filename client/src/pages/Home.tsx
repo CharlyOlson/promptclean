@@ -53,15 +53,16 @@ function toWeightedPayload(questionId: string, states: OptionState[]): WeightedA
 }
 
 interface CleanupResult {
-  // A
+  // A — cleaned prompt + Gemini executing it
   fixedPrompt: string;
   changeLog: string[];
   foil: { first: string; outer: string; inner: string; last: string };
   pos: { nouns: string[]; verbs: string[]; adjectives: string[] };
-  // B
-  fullResponse: string;
+  fullResponse: string;         // Gemini doing the actual task
+  // B — alternative AI perspective
+  alternativeResponse: string;
   media: { generatedImageUrl: string | null; hasImageInput: boolean; hasVideoInput: boolean };
-  // C
+  // C — score + evaluation
   score: { specificity: number; context: number; constraints: number; outputDef: number; total: number };
   deltaComment: string;
   didWell: string[];
@@ -189,17 +190,59 @@ function ScoreBar({ label, value, max, delay }: { label: string; value: number; 
 }
 
 // ── Signal Score Panel ────────────────────────────────────────────────────────
-// ── Panel A — Cleaned Prompt ─────────────────────────────────────────────────────
+// ── Panel A — Cleaned Prompt + Response ──────────────────────────────────────
 function PanelA({ result }: { result: CleanupResult }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyResponse = async () => {
+    try { await navigator.clipboard.writeText(result.fullResponse); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
   return (
     <div className="rounded-lg border border-border bg-card p-5 space-y-4" data-testid="panel-a">
       <div className="flex items-center gap-3">
         <span className="font-display text-xl font-black" style={{ color: "hsl(174 100% 38%)" }}>A</span>
-        <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Cleaned Prompt</h3>
+        <div>
+          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Cleaned Prompt</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">The fixed prompt + Gemini executing it as the actual task</p>
+        </div>
       </div>
 
+      {/* The prompt itself */}
       <FixedPromptBlock prompt={result.fixedPrompt} />
+
+      {/* Gemini's full response to the cleaned prompt */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Response</span>
+          <button onClick={copyResponse} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            {copied ? <><Check className="w-3.5 h-3.5 text-primary" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
+          </button>
+        </div>
+        {result.media?.generatedImageUrl && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Generated image</span>
+              <a href={result.media.generatedImageUrl} download="promptclean-generated.png"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                <Download className="w-3.5 h-3.5" />Save
+              </a>
+            </div>
+            <img src={result.media.generatedImageUrl} alt="Generated" className="w-full rounded-md object-cover max-h-80" />
+          </div>
+        )}
+        {result.fullResponse ? (
+          <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
+            {result.fullResponse}
+          </div>
+        ) : (
+          <div className="rounded-md bg-muted/40 p-4 text-sm text-muted-foreground italic">
+            Processing response…
+          </div>
+        )}
+      </div>
 
       {/* FOIL + POS breakdown toggle */}
       <button
@@ -213,7 +256,6 @@ function PanelA({ result }: { result: CleanupResult }) {
 
       {showBreakdown && (
         <div className="space-y-3 pt-1">
-          {/* FOIL */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             {([
               ["F — First (subject)", result.foil?.first],
@@ -227,7 +269,6 @@ function PanelA({ result }: { result: CleanupResult }) {
               </div>
             ))}
           </div>
-          {/* POS */}
           <div className="flex flex-wrap gap-2 text-xs">
             {result.pos?.nouns?.map((w: string) => (
               <span key={w} className="px-2 py-0.5 rounded-full bg-primary/15 text-primary font-medium">{w}</span>
@@ -244,7 +285,6 @@ function PanelA({ result }: { result: CleanupResult }) {
             <span><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "hsl(38 85% 52% / 0.5)" }} />verb</span>
             <span><span className="inline-block w-2 h-2 rounded-full bg-muted-foreground/30 mr-1" />adjective</span>
           </div>
-          {/* Change log */}
           {result.changeLog?.length > 0 && (
             <ul className="space-y-1.5 border-l-2 border-primary/30 pl-3">
               {result.changeLog.map((item: string, i: number) => (
@@ -258,11 +298,11 @@ function PanelA({ result }: { result: CleanupResult }) {
   );
 }
 
-// ── Panel B — Full AI Response ──────────────────────────────────────────────
+// ── Panel B — Alternative AI Response ────────────────────────────────────────
 function PanelB({ result }: { result: CleanupResult }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    try { await navigator.clipboard.writeText(result.fullResponse); } catch {}
+    try { await navigator.clipboard.writeText(result.alternativeResponse); } catch {}
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -272,34 +312,23 @@ function PanelB({ result }: { result: CleanupResult }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="font-display text-xl font-black" style={{ color: "hsl(38 85% 52%)" }}>B</span>
-          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">AI Response</h3>
+          <div>
+            <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Alternative AI</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Same fixed prompt — different AI perspective (structured, direct)</p>
+          </div>
         </div>
         <button onClick={copy} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
           {copied ? <><Check className="w-3.5 h-3.5 text-primary" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">Gemini's full response to the cleaned prompt — doing the actual task.</p>
 
-      {result.media?.generatedImageUrl && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Generated image</span>
-            <a href={result.media.generatedImageUrl} download="promptclean-generated.png"
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-              <Download className="w-3.5 h-3.5" />Save
-            </a>
-          </div>
-          <img src={result.media.generatedImageUrl} alt="Generated" className="w-full rounded-md object-cover max-h-80" />
-        </div>
-      )}
-
-      {result.fullResponse ? (
+      {result.alternativeResponse ? (
         <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
-          {result.fullResponse}
+          {result.alternativeResponse}
         </div>
       ) : (
         <div className="rounded-md bg-muted/40 p-4 text-sm text-muted-foreground italic">
-          Response loading… Gemini is processing the cleaned prompt.
+          Processing alternative response…
         </div>
       )}
     </div>

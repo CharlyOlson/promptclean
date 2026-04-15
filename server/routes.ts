@@ -470,21 +470,31 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           (parsed.delta?.outputDef ?? 0),
       };
 
-      // System prompt for the full AI response to the fixed prompt —
-      // behave as if actually doing the task, not meta-commenting on it.
-      const FULL_RESPONSE_SYSTEM =
-        "You are a highly capable AI assistant. The following is a well-specified prompt. " +
-        "Execute it fully and completely as if it were a real user request. " +
-        "Produce the actual output the prompt asks for — do not describe what you would do, just do it. " +
-        "If the prompt asks for an article, write the article. " +
-        "If it asks for a list, produce the list. " +
-        "If it asks for code, write the code. " +
-        "Match the format, length, and tone the prompt specifies.";
+      // A — Gemini executes the fixed prompt as the actual task
+      const EXECUTE_SYSTEM =
+        "You are a highly capable AI assistant. A well-specified prompt follows. " +
+        "Execute it completely — produce the actual deliverable. " +
+        "Write the article, generate the list, write the code, draft the email — whatever it asks for. " +
+        "Do not describe what you will do. Do not add meta-commentary. Just do it. " +
+        "Match the format, length, and tone the prompt specifies exactly.";
 
-      // Sequential — queue handles rate limiting, no parallel stacking
-      let geminiFixed = "";
-      try { geminiFixed = await geminiText(fixedPrompt, FULL_RESPONSE_SYSTEM); }
+      // B — alternative AI perspective on the same fixed prompt
+      // Framed as a different model: structured, direct, no fluff
+      const ALTERNATIVE_SYSTEM =
+        "You are an alternative AI assistant with a different approach: you respond with maximum " +
+        "structure and conciseness. When given a prompt, produce the output in a clear, well-organized " +
+        "format — use headers, bullet points, numbered steps, or tables where they help. " +
+        "No preamble. No sign-off. No filler. Start immediately with the output. " +
+        "If the task calls for an image, describe it in precise visual detail as a generation-ready prompt.";
+
+      // Sequential — queue handles rate limiting
+      let fullResponse = "";
+      try { fullResponse = await geminiText(fixedPrompt, EXECUTE_SYSTEM); }
       catch (e: any) { console.error("Full response failed (non-fatal):", e.message); }
+
+      let alternativeResponse = "";
+      try { alternativeResponse = await geminiText(fixedPrompt, ALTERNATIVE_SYSTEM); }
+      catch (e: any) { console.error("Alternative response failed (non-fatal):", e.message); }
 
       let generatedImageUrl: string | null = null;
       if (generateImage) {
@@ -517,13 +527,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const currentUsage = usageMap.get(sid)!;
 
       return res.json({
-        // A — the cleaned prompt
+        // A — cleaned prompt + Gemini executing it
         fixedPrompt,
         changeLog,
         foil,
         pos,
-        // B — full AI response to the cleaned prompt
-        fullResponse: geminiFixed,
+        fullResponse,          // Gemini doing the actual task
+        // B — alternative AI perspective on the same fixed prompt
+        alternativeResponse,
         media: {
           generatedImageUrl,
           hasImageInput,
