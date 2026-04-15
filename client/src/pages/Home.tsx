@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight, LogOut } from "lucide-react";
+import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight, LogOut, ImageIcon, Video, X, User, Download } from "lucide-react";
 import type { Cleanup, WeightedAnswer } from "@shared/schema";
 import QuestionCard from "@/components/QuestionCard";
 import type { OptionState, QuestionOption } from "@/components/QuestionCard";
 import PromptControls, { type PromptConfig } from "@/components/PromptControls";
 import PaywallBanner from "@/components/PaywallBanner";
 import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Question {
@@ -56,9 +57,19 @@ interface CleanupResult {
   fixedPrompt: string;
   changeLog: string[];
   deltaComment: string;
+  patternTag?: string;
   nodeOutputs: { alpha: string; beta: string; gamma: any; delta: any };
   gemini: { fixedPromptOutput: string; originalPromptOutput: string };
+  media: { generatedImageUrl: string | null; hasImageInput: boolean; hasVideoInput: boolean };
   usage: { runsUsed: number; limit: number; isPro: boolean; runsRemaining: number };
+}
+
+interface MediaInput {
+  imageFile?: File;
+  imagePreview?: string; // data URL
+  imageBase64?: string;
+  imageMime?: string;
+  videoUrl?: string;
 }
 
 type Stage = "input" | "questions" | "processing" | "done";
@@ -477,6 +488,9 @@ export default function Home() {
   const [activeNode, setActiveNode] = useState(-1);
   const [paywalled, setPaywalled] = useState(false);
   const [usageInfo, setUsageInfo] = useState<{ runs: number; limit: number; isPro: boolean } | null>(null);
+  const [media, setMedia] = useState<MediaInput>({});
+  const [generateImage, setGenerateImage] = useState(false);
+  const [showVideoInput, setShowVideoInput] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [config, setConfig] = useState<PromptConfig>({
     promptType: "general",
@@ -495,6 +509,18 @@ export default function Home() {
   // ── Step 1: fetch questions ─────────────────────────────────────────────────
   const questionsMutation = useMutation({
     mutationFn: async (rawPrompt: string) => {
+      // Use FormData when media is present
+      if (media.imageFile || media.videoUrl) {
+        const fd = new FormData();
+        fd.append("prompt", rawPrompt);
+        if (media.imageFile) fd.append("image", media.imageFile);
+        if (media.videoUrl) fd.append("videoUrl", media.videoUrl);
+        const res = await fetch(
+          (window as any).__API_BASE__ ? `${(window as any).__API_BASE__}/api/questions` : "/api/questions",
+          { method: "POST", body: fd }
+        );
+        return (await res.json()) as { questions: Question[] };
+      }
       const res = await apiRequest("POST", "/api/questions", { prompt: rawPrompt });
       return (await res.json()) as { questions: Question[] };
     },
@@ -565,7 +591,20 @@ export default function Home() {
   // ── Step 2: run full cleanup with answers ───────────────────────────────────
   const cleanupMutation = useMutation({
     mutationFn: async ({ rawPrompt, ans, weightedAnswers }: { rawPrompt: string; ans: Record<string, string>; weightedAnswers?: WeightedAnswer[] }) => {
-      const res = await apiRequest("POST", "/api/cleanup", { prompt: rawPrompt, answers: ans, weightedAnswers });
+      const fd = new FormData();
+      fd.append("prompt", rawPrompt);
+      fd.append("answers", JSON.stringify(ans));
+      if (weightedAnswers) fd.append("weightedAnswers", JSON.stringify(weightedAnswers));
+      if (media.imageFile) fd.append("image", media.imageFile);
+      if (media.videoUrl) fd.append("videoUrl", media.videoUrl);
+      if (generateImage) fd.append("generateImage", "true");
+      const apiBase = (window as any).__API_BASE__ || "";
+      const res = await fetch(`${apiBase}/api/cleanup`, { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        const e: any = new Error(err.message || "Cleanup failed");
+        e.status = res.status; throw e;
+      }
       return (await res.json()) as CleanupResult;
     },
     onMutate: () => {
@@ -674,6 +713,9 @@ export default function Home() {
     setQuestionOptions({});
     setActiveNode(-1);
     setPaywalled(false);
+    setMedia({});
+    setGenerateImage(false);
+    setShowVideoInput(false);
   };
 
   const answeredCount =
@@ -689,10 +731,19 @@ export default function Home() {
           <button onClick={handleReset} className="focus:outline-none" aria-label="Reset">
             <Logo />
           </button>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {usageInfo && (
               <UsageBar runs={usageInfo.runs} limit={usageInfo.limit} isPro={usageInfo.isPro} />
             )}
+            <Link href="/profile">
+              <button
+                className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+                aria-label="Signal profile"
+                data-testid="link-profile"
+              >
+                <User className="w-4 h-4" />
+              </button>
+            </Link>
             <button
               onClick={toggle}
               data-testid="theme-toggle"
@@ -733,6 +784,91 @@ export default function Home() {
 
             {/* ─ Prompt settings ─ */}
             <PromptControls value={config} onChange={setConfig} />
+
+            {/* ─ Media input ─ */}
+            <div className="mt-3 space-y-2">
+              {/* Image input */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <label
+                  htmlFor="image-upload"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border
+                    text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50
+                    transition-colors cursor-pointer"
+                  data-testid="button-add-image"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  {media.imagePreview ? "Change image" : "Add image"}
+                </label>
+                <input
+                  id="image-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      const dataUrl = ev.target?.result as string;
+                      setMedia((m) => ({ ...m, imageFile: file, imagePreview: dataUrl }));
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                <button
+                  onClick={() => setShowVideoInput((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border
+                    text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  data-testid="button-add-video"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  {media.videoUrl ? "Change video URL" : "Add video URL"}
+                </button>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={generateImage}
+                    onChange={(e) => setGenerateImage(e.target.checked)}
+                    className="rounded border-border"
+                    data-testid="checkbox-generate-image"
+                  />
+                  Generate image from result
+                </label>
+              </div>
+
+              {/* Video URL input */}
+              {showVideoInput && (
+                <input
+                  type="url"
+                  value={media.videoUrl ?? ""}
+                  onChange={(e) => setMedia((m) => ({ ...m, videoUrl: e.target.value }))}
+                  placeholder="Paste video URL (YouTube, etc.)..."
+                  data-testid="input-video-url"
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-xs
+                    text-foreground placeholder:text-muted-foreground/50 focus:outline-none
+                    focus:ring-2 focus:ring-primary/40 transition-shadow"
+                />
+              )}
+
+              {/* Image preview */}
+              {media.imagePreview && (
+                <div className="relative inline-block">
+                  <img
+                    src={media.imagePreview}
+                    alt="Input image"
+                    className="h-20 w-auto rounded-md border border-border object-cover"
+                  />
+                  <button
+                    onClick={() => setMedia((m) => ({ ...m, imageFile: undefined, imagePreview: undefined }))}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-muted border border-border
+                      flex items-center justify-center hover:bg-card transition-colors"
+                    aria-label="Remove image"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -827,6 +963,29 @@ export default function Home() {
         {stage === "done" && result && (
           <div className="space-y-4 mt-2" data-testid="results-section">
             <FixedPromptBlock prompt={result.fixedPrompt} />
+
+            {/* Generated image */}
+            {result.media?.generatedImageUrl && (
+              <div className="rounded-lg border border-border bg-card p-5 space-y-3" data-testid="generated-image">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Generated Image</h3>
+                  <a
+                    href={result.media.generatedImageUrl}
+                    download="promptclean-generated.png"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Save
+                  </a>
+                </div>
+                <img
+                  src={result.media.generatedImageUrl}
+                  alt="Generated from cleaned prompt"
+                  className="w-full rounded-md object-cover max-h-80"
+                />
+                <p className="text-xs text-muted-foreground">Generated using the cleaned prompt via Imagen 3.</p>
+              </div>
+            )}
+
             {result.gemini && (
               <GeminiPanel
                 fixed={result.gemini.fixedPromptOutput}

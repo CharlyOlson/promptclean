@@ -12,6 +12,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Welcome from "@/pages/Welcome";
 import Login from "@/pages/Login";
+import Profile from "@/pages/Profile";
 import { useAuth } from "@/hooks/use-auth";
 import { PC_SEEN_WELCOME_KEY } from "./lib/constants";
 
@@ -78,6 +79,9 @@ function App() {
             </Route>
             <Route path="/welcome">
               <RequireAuth><Welcome /></RequireAuth>
+            </Route>
+            <Route path="/profile">
+              <RequireAuth><Profile /></RequireAuth>
             </Route>
             <Route>
               <RequireAuth><NotFound /></RequireAuth>
