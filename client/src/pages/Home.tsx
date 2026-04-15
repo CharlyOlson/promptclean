@@ -59,8 +59,16 @@ interface CleanupResult {
   foil: { first: string; outer: string; inner: string; last: string };
   pos: { nouns: string[]; verbs: string[]; adjectives: string[] };
   fullResponse: string;         // Gemini doing the actual task
-  // B — alternative AI perspective
-  alternativeResponse: string;
+  // B — iterative refinement
+  alternativeResponse: string; // best output from loop
+  iterations: {
+    pass: number;
+    prompt: string;
+    output: string;
+    score: number;
+    satisfied: boolean;
+    reasoning: string;
+  }[];
   media: { generatedImageUrl: string | null; hasImageInput: boolean; hasVideoInput: boolean };
   // C — score + evaluation
   score: { specificity: number; context: number; constraints: number; outputDef: number; total: number };
@@ -298,37 +306,128 @@ function PanelA({ result }: { result: CleanupResult }) {
   );
 }
 
-// ── Panel B — Alternative AI Response ────────────────────────────────────────
+// ── Panel B — Iterative Refinement Loop ──────────────────────────────────────
 function PanelB({ result }: { result: CleanupResult }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(result.alternativeResponse); } catch {}
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const [openPass, setOpenPass] = useState<number | null>(null);
+  const [copiedPass, setCopiedPass] = useState<number | null>(null);
+  const iters = result.iterations ?? [];
+  const best = [...iters].sort((a, b) => b.score - a.score)[0];
+
+  const copyOutput = async (text: string, pass: number) => {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    setCopiedPass(pass);
+    setTimeout(() => setCopiedPass(null), 1500);
   };
+
+  const scoreColor = (s: number) =>
+    s >= 85 ? "hsl(174 100% 38%)" : s >= 60 ? "hsl(38 85% 52%)" : "hsl(0 70% 55%)";
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 space-y-4" data-testid="panel-b">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-display text-xl font-black" style={{ color: "hsl(38 85% 52%)" }}>B</span>
-          <div>
-            <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Alternative AI</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Same fixed prompt — different AI perspective (structured, direct)</p>
-          </div>
+      <div className="flex items-center gap-3">
+        <span className="font-display text-xl font-black" style={{ color: "hsl(38 85% 52%)" }}>B</span>
+        <div>
+          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">Iterative Refinement</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Gemini solving the prompt in a fresh session — refining until it satisfies your original intent (max 10 passes)
+          </p>
         </div>
-        <button onClick={copy} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-          {copied ? <><Check className="w-3.5 h-3.5 text-primary" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
-        </button>
       </div>
 
-      {result.alternativeResponse ? (
-        <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-96 overflow-y-auto">
-          {result.alternativeResponse}
+      {/* Summary bar */}
+      {iters.length > 0 && (
+        <div className="flex items-center gap-4 px-3 py-2 rounded-md bg-muted/40 text-xs">
+          <span className="text-muted-foreground">{iters.length} pass{iters.length !== 1 ? "es" : ""}</span>
+          <span className="text-muted-foreground">·</span>
+          <span>
+            Best score: <span className="font-bold tabular-nums" style={{ color: scoreColor(best?.score ?? 0) }}>{best?.score ?? 0}/100</span>
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className={best?.satisfied ? "text-primary font-medium" : "text-muted-foreground"}>
+            {best?.satisfied ? "✓ Satisfied" : "Not fully satisfied"}
+          </span>
         </div>
-      ) : (
+      )}
+
+      {/* Best output expanded at top */}
+      {best && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Best output — Pass {best.pass}
+            </span>
+            <button
+              onClick={() => copyOutput(best.output, -1)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {copiedPass === -1 ? <><Check className="w-3.5 h-3.5 text-primary" />Copied</> : <><Copy className="w-3.5 h-3.5" />Copy</>}
+            </button>
+          </div>
+          <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto">
+            {best.output || <span className="text-muted-foreground italic">No output generated</span>}
+          </div>
+          {best.reasoning && (
+            <p className="text-xs text-muted-foreground italic">{best.reasoning}</p>
+          )}
+        </div>
+      )}
+
+      {/* All passes accordion */}
+      {iters.length > 1 && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">All passes</p>
+          {iters.map((iter) => (
+            <div key={iter.pass} className="rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => setOpenPass(openPass === iter.pass ? null : iter.pass)}
+                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-muted/40 transition-colors text-left"
+                data-testid={`pass-toggle-${iter.pass}`}
+              >
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="font-mono font-bold text-muted-foreground w-12">Pass {iter.pass}</span>
+                  <span
+                    className="font-bold tabular-nums"
+                    style={{ color: scoreColor(iter.score) }}
+                  >
+                    {iter.score}/100
+                  </span>
+                  {iter.satisfied && <span className="text-primary">✓</span>}
+                  <span className="text-muted-foreground truncate max-w-[180px]">{iter.reasoning}</span>
+                </div>
+                <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${openPass === iter.pass ? "rotate-90" : ""}`} />
+              </button>
+              {openPass === iter.pass && (
+                <div className="border-t border-border px-3 py-3 space-y-3">
+                  {iter.prompt !== result.fixedPrompt && (
+                    <div className="space-y-1">
+                      <p className="text-xs text-muted-foreground font-medium">Refined prompt used</p>
+                      <p className="text-xs text-foreground/80 bg-muted/30 rounded px-2 py-1.5 leading-relaxed">{iter.prompt}</p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground font-medium">Output</p>
+                      <button
+                        onClick={() => copyOutput(iter.output, iter.pass)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {copiedPass === iter.pass ? <><Check className="w-3 h-3 text-primary" />Copied</> : <><Copy className="w-3 h-3" />Copy</>}
+                      </button>
+                    </div>
+                    <div className="text-xs text-foreground/90 bg-muted/30 rounded px-2 py-2 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {iter.output}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {iters.length === 0 && (
         <div className="rounded-md bg-muted/40 p-4 text-sm text-muted-foreground italic">
-          Processing alternative response…
+          Processing refinement loop…
         </div>
       )}
     </div>

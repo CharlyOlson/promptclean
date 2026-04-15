@@ -478,23 +478,100 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         "Do not describe what you will do. Do not add meta-commentary. Just do it. " +
         "Match the format, length, and tone the prompt specifies exactly.";
 
-      // B — alternative AI perspective on the same fixed prompt
-      // Framed as a different model: structured, direct, no fluff
-      const ALTERNATIVE_SYSTEM =
-        "You are an alternative AI assistant with a different approach: you respond with maximum " +
-        "structure and conciseness. When given a prompt, produce the output in a clear, well-organized " +
-        "format — use headers, bullet points, numbered steps, or tables where they help. " +
-        "No preamble. No sign-off. No filler. Start immediately with the output. " +
-        "If the task calls for an image, describe it in precise visual detail as a generation-ready prompt.";
-
-      // Sequential — queue handles rate limiting
+      // A — execute the fixed prompt as the actual task
       let fullResponse = "";
       try { fullResponse = await geminiText(fixedPrompt, EXECUTE_SYSTEM); }
       catch (e: any) { console.error("Full response failed (non-fatal):", e.message); }
 
-      let alternativeResponse = "";
-      try { alternativeResponse = await geminiText(fixedPrompt, ALTERNATIVE_SYSTEM); }
-      catch (e: any) { console.error("Alternative response failed (non-fatal):", e.message); }
+      // B — iterative refinement loop
+      // Fresh session context, uses cleaned prompt + clarifying answers.
+      // Each iteration evaluates whether the output actually satisfies
+      // the original user intent. Refines and re-runs until satisfied
+      // (score >= 85) or max 10 passes reached.
+
+      const INTENT_SUMMARY =
+        `Original user prompt: "${prompt.trim()}"
+` +
+        `Clarifying answers: ${JSON.stringify(answers)}
+` +
+        `Core intent: ${parsed.alpha ?? ""}`;
+
+      const REFINE_SYSTEM =
+        `You are an iterative AI refinement engine. Your job is to take a prompt, ` +
+        `execute it, evaluate whether the output actually satisfies the user's original intent, ` +
+        `and if not, improve the prompt and try again.
+
+` +
+        `The user's original intent:
+${INTENT_SUMMARY}
+
+` +
+        `Rules:
+` +
+        `- Execute the prompt fully — produce the actual deliverable, not a description of it
+` +
+        `- After producing output, evaluate: does this genuinely satisfy what the user wanted?
+` +
+        `- Return a JSON object with: { "output": "the full response", "score": 0-100, ` +
+        `"satisfied": true/false, "refinedPrompt": "improved prompt if not satisfied, else null", ` +
+        `"reasoning": "one sentence on why this does or doesn't satisfy the intent" }
+` +
+        `- score >= 85 means satisfied
+` +
+        `- If not satisfied, refinedPrompt must be a genuinely improved version that addresses the gap
+` +
+        `- Return only valid JSON. No markdown fences.`;
+
+      interface IterationResult {
+        pass: number;
+        prompt: string;
+        output: string;
+        score: number;
+        satisfied: boolean;
+        reasoning: string;
+      }
+
+      const iterations: IterationResult[] = [];
+      let currentPrompt = fixedPrompt;
+      const MAX_PASSES = 10;
+
+      for (let pass = 1; pass <= MAX_PASSES; pass++) {
+        let raw = "";
+        try {
+          raw = await geminiText(currentPrompt, REFINE_SYSTEM);
+        } catch (e: any) {
+          console.error(`Iteration ${pass} failed:`, e.message);
+          iterations.push({ pass, prompt: currentPrompt, output: "", score: 0, satisfied: false, reasoning: "API error" });
+          break;
+        }
+
+        let parsed_iter: any = {};
+        try {
+          const cleaned_iter = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+          parsed_iter = JSON.parse(cleaned_iter);
+        } catch {
+          // If JSON parse fails, treat raw as the output
+          parsed_iter = { output: raw, score: 50, satisfied: false, refinedPrompt: null, reasoning: "Could not parse evaluation" };
+        }
+
+        const iteration: IterationResult = {
+          pass,
+          prompt: currentPrompt,
+          output: parsed_iter.output ?? raw,
+          score: parsed_iter.score ?? 50,
+          satisfied: parsed_iter.satisfied ?? (parsed_iter.score >= 85),
+          reasoning: parsed_iter.reasoning ?? "",
+        };
+        iterations.push(iteration);
+
+        if (iteration.satisfied || pass === MAX_PASSES) break;
+        if (!parsed_iter.refinedPrompt) break; // no further improvement suggested
+
+        currentPrompt = parsed_iter.refinedPrompt;
+      }
+
+      const bestIteration = [...iterations].sort((a, b) => b.score - a.score)[0];
+      const alternativeResponse = bestIteration?.output ?? "";
 
       let generatedImageUrl: string | null = null;
       if (generateImage) {
@@ -533,8 +610,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         foil,
         pos,
         fullResponse,          // Gemini doing the actual task
-        // B — alternative AI perspective on the same fixed prompt
-        alternativeResponse,
+        // B — iterative refinement loop result
+        alternativeResponse,  // best output from iterations
+        iterations,           // all passes with prompt/output/score/reasoning
         media: {
           generatedImageUrl,
           hasImageInput,
