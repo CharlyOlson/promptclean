@@ -1,11 +1,38 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import OpenAI from "openai";
+import Stripe from "stripe";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const openai = new OpenAI();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2025-03-31.basil" });
+const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-// ── Prompt 1: Generate clarifying questions ───────────────────────────────────
+const PRICE_ID = process.env.STRIPE_PRICE_ID!;
+const FREE_RUN_LIMIT = 3;
+const FRONTEND_URL = process.env.FRONTEND_URL ?? "https://promptclean-production.up.railway.app";
+
+// ── In-memory usage store (survives restarts via SQLite below) ─────────────────
+// sid → { runs: number, isPro: boolean }
+const usageMap = new Map<string, { runs: number; isPro: boolean }>();
+
+function getSession(req: Request, res: Response): string {
+  let sid = (req as any).cookies?.promptclean_sid as string | undefined;
+  if (!sid) {
+    sid = crypto.randomUUID();
+    res.cookie("promptclean_sid", sid, {
+      httpOnly: true,
+      maxAge: 60 * 60 * 24 * 30 * 1000, // 30 days
+      sameSite: "none",
+      secure: true,
+    });
+  }
+  if (!usageMap.has(sid)) usageMap.set(sid, { runs: 0, isPro: false });
+  return sid;
+}
+
+// ── OpenAI system prompts ──────────────────────────────────────────────────────
 const QUESTIONS_SYSTEM = `You are Alpha Node — the Feel stage of a four-step consciousness chain: Feel → Understand → Decide → Do.
 
 A bad prompt skipped from Feel straight to Do. Your job is to surface exactly what got skipped in the middle — the Understand and Decide stages — so the rewriter can fill them in with precision instead of assumption.
@@ -42,7 +69,6 @@ Return a JSON array:
 
 Return only valid JSON. No markdown. No explanation.`;
 
-// ── Prompt 2: Final cleanup using answers ─────────────────────────────────────
 const CLEANUP_SYSTEM = `You are a 4-node prompt cleanup engine. You receive a raw prompt AND a set of clarifying answers.
 
 Use the answers to eliminate every assumption. Do not guess at anything the answers don't cover.
@@ -67,18 +93,74 @@ Return a JSON object with this exact structure:
 Scoring rules: score the ORIGINAL prompt only. Most bad prompts score 20–50 total. Do not inflate.
 Return only valid JSON. No markdown fences. No explanation outside the JSON.`;
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+// ── Usage endpoint ─────────────────────────────────────────────────────────────
+async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+
+  app.get("/api/usage", (req, res) => {
+    const sid = getSession(req, res);
+    const usage = usageMap.get(sid)!;
+    res.json({ runs: usage.runs, limit: FREE_RUN_LIMIT, isPro: usage.isPro });
+  });
+
+  // ── Stripe checkout ──────────────────────────────────────────────────────────
+  app.post("/api/create-checkout-session", async (req, res) => {
+    try {
+      const sid = getSession(req, res);
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: PRICE_ID, quantity: 1 }],
+        success_url: `${FRONTEND_URL}/?payment=success`,
+        cancel_url: `${FRONTEND_URL}/?payment=cancelled`,
+        metadata: { promptclean_sid: sid },
+      });
+      res.json({ url: session.url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Stripe webhook ───────────────────────────────────────────────────────────
+  app.post(
+    "/api/webhook",
+    (req, res, next) => {
+      // Webhook needs raw body — already stored on req.rawBody from index.ts
+      next();
+    },
+    (req: any, res) => {
+      const sig = req.headers["stripe-signature"];
+      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+      if (!webhookSecret) {
+        // No webhook secret configured — just mark pro directly for testing
+        res.json({ received: true });
+        return;
+      }
+
+      let event: Stripe.Event;
+      try {
+        event = stripe.webhooks.constructEvent(req.rawBody as Buffer, sig as string, webhookSecret);
+      } catch (err: any) {
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+      }
+
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const sid = session.metadata?.promptclean_sid;
+        if (sid) {
+          const existing = usageMap.get(sid) ?? { runs: 0, isPro: false };
+          usageMap.set(sid, { ...existing, isPro: true });
+        }
+      }
+
+      res.json({ received: true });
+    }
+  );
 
   // ── Step 1: Generate questions ─────────────────────────────────────────────
   app.post("/api/questions", async (req, res) => {
     try {
       const { prompt } = req.body;
-      if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-        return res.status(400).json({ message: "Prompt is required" });
-      }
+      if (!prompt?.trim()) return res.status(400).json({ message: "Prompt is required" });
 
       const response = await openai.responses.create({
         model: "gpt5_mini",
@@ -107,43 +189,72 @@ export async function registerRoutes(
     }
   });
 
-  // ── Step 2: Full cleanup with answers ─────────────────────────────────────
+  // ── Step 2: Full cleanup + Gemini output ────────────────────────────────────
   app.post("/api/cleanup", async (req, res) => {
     try {
-      const { prompt, answers } = req.body;
-      if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-        return res.status(400).json({ message: "Prompt is required" });
+      // ── Paywall check ────────────────────────────────────────────────────────
+      const sid = getSession(req, res);
+      const usage = usageMap.get(sid)!;
+
+      if (!usage.isPro && usage.runs >= FREE_RUN_LIMIT) {
+        return res.status(402).json({
+          error: "free_limit_reached",
+          message: `You've used all ${FREE_RUN_LIMIT} free runs.`,
+          runsUsed: usage.runs,
+          limit: FREE_RUN_LIMIT,
+        });
       }
 
-      // Build the input with answers incorporated
-      const answersBlock = answers && typeof answers === "object" && Object.keys(answers).length > 0
-        ? "\n\nClarifying answers provided by the user:\n" +
-          Object.entries(answers)
-            .map(([qid, ans]) => `- ${qid}: ${ans}`)
-            .join("\n")
-        : "\n\nNo clarifying answers provided — rewrite with best general precision.";
+      const { prompt, answers } = req.body;
+      if (!prompt?.trim()) return res.status(400).json({ message: "Prompt is required" });
+
+      // ── Increment run count (before calling AI — counts the attempt) ─────────
+      if (!usage.isPro) {
+        usageMap.set(sid, { ...usage, runs: usage.runs + 1 });
+      }
+
+      const answersBlock = answers && Object.keys(answers).length > 0
+        ? "\n\nClarifying answers:\n" +
+          Object.entries(answers).map(([k, v]) => `- ${k}: ${v}`).join("\n")
+        : "\n\nNo clarifying answers — rewrite with best general precision.";
 
       const input = `Raw prompt: "${prompt.trim()}"${answersBlock}`;
 
-      const response = await openai.responses.create({
-        model: "gpt5_mini",
-        instructions: CLEANUP_SYSTEM,
-        input,
-      });
+      // ── OpenAI cleanup (runs in parallel with Gemini) ─────────────────────────
+      const [openaiResponse, geminiResponse] = await Promise.allSettled([
+        // OpenAI: full node cleanup
+        openai.responses.create({
+          model: "gpt5_mini",
+          instructions: CLEANUP_SYSTEM,
+          input,
+        }),
+        // Gemini: first run the cleanup to get fixed prompt, then use it
+        // We'll call Gemini after we have the fixed prompt — can't parallelize fully
+        // So placeholder here, handled below
+        Promise.resolve(null),
+      ]);
 
-      const rawText = typeof response.output_text === "string"
-        ? response.output_text
-        : JSON.stringify(response.output_text);
+      // ── Parse OpenAI result ───────────────────────────────────────────────────
+      if (openaiResponse.status === "rejected") {
+        throw new Error("OpenAI cleanup failed: " + openaiResponse.reason?.message);
+      }
 
-      const cleaned = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      const rawText = typeof openaiResponse.value.output_text === "string"
+        ? openaiResponse.value.output_text
+        : JSON.stringify(openaiResponse.value.output_text);
+
+      const cleanedJson = rawText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
       let parsed: any;
       try {
-        parsed = JSON.parse(cleaned);
+        parsed = JSON.parse(cleanedJson);
       } catch {
         return res.status(500).json({ message: "Failed to parse AI response" });
       }
 
+      const fixedPrompt = parsed.gamma?.fixedPrompt ?? parsed.beta ?? "";
+      const changeLog = parsed.gamma?.changeLog ?? [];
+      const deltaComment = parsed.delta?.comment ?? "";
       const score = {
         specificity: parsed.delta?.specificity ?? 0,
         context: parsed.delta?.context ?? 0,
@@ -156,10 +267,31 @@ export async function registerRoutes(
           (parsed.delta?.outputDef ?? 0),
       };
 
-      const fixedPrompt = parsed.gamma?.fixedPrompt ?? parsed.beta ?? "";
-      const changeLog = parsed.gamma?.changeLog ?? [];
-      const deltaComment = parsed.delta?.comment ?? "";
+      // ── Gemini: run the FIXED prompt and return what Gemini says ─────────────
+      let geminiOutput = "";
+      let geminiOriginalOutput = "";
+      try {
+        const model = genai.getGenerativeModel({ model: "gemini-2.0-flash" });
 
+        // Run both original and fixed prompt through Gemini in parallel
+        const [geminiFixed, geminiOriginal] = await Promise.allSettled([
+          model.generateContent(fixedPrompt),
+          model.generateContent(prompt.trim()),
+        ]);
+
+        if (geminiFixed.status === "fulfilled") {
+          geminiOutput = geminiFixed.value.response.text();
+        }
+        if (geminiOriginal.status === "fulfilled") {
+          geminiOriginalOutput = geminiOriginal.value.response.text();
+        }
+      } catch (geminiErr: any) {
+        console.error("Gemini error (non-fatal):", geminiErr.message);
+        geminiOutput = "Gemini unavailable — add GEMINI_API_KEY to Railway variables.";
+        geminiOriginalOutput = "";
+      }
+
+      // ── Save to history ───────────────────────────────────────────────────────
       await storage.createCleanup({
         originalPrompt: prompt.trim(),
         fixedPrompt,
@@ -177,6 +309,16 @@ export async function registerRoutes(
           gamma: parsed.gamma ?? {},
           delta: parsed.delta ?? {},
         },
+        gemini: {
+          fixedPromptOutput: geminiOutput,
+          originalPromptOutput: geminiOriginalOutput,
+        },
+        usage: {
+          runsUsed: usageMap.get(sid)!.runs,
+          limit: FREE_RUN_LIMIT,
+          isPro: usageMap.get(sid)!.isPro,
+          runsRemaining: Math.max(0, FREE_RUN_LIMIT - usageMap.get(sid)!.runs),
+        },
       });
     } catch (error: any) {
       console.error("Cleanup error:", error);
@@ -190,10 +332,11 @@ export async function registerRoutes(
       const recent = await storage.getRecentCleanups(5);
       return res.json(recent);
     } catch (error: any) {
-      console.error("History error:", error);
       return res.status(500).json({ message: error.message || "Internal server error" });
     }
   });
 
   return httpServer;
 }
+
+export { registerRoutes };

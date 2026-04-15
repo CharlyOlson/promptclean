@@ -20,6 +20,8 @@ interface CleanupResult {
   changeLog: string[];
   deltaComment: string;
   nodeOutputs: { alpha: string; beta: string; gamma: any; delta: any };
+  gemini: { fixedPromptOutput: string; originalPromptOutput: string };
+  usage: { runsUsed: number; limit: number; isPro: boolean; runsRemaining: number };
 }
 
 type Stage = "input" | "questions" | "processing" | "done";
@@ -285,6 +287,125 @@ function FixedPromptBlock({ prompt }: { prompt: string }) {
   );
 }
 
+// ── Paywall Gate ─────────────────────────────────────────────────────────────
+function PaywallGate({ onUpgrade }: { onUpgrade: () => void }) {
+  return (
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-6 text-center space-y-4" data-testid="paywall-gate">
+      <div className="text-3xl font-display font-bold" style={{ color: "hsl(38 85% 52%)" }}>3 / 3</div>
+      <p className="text-sm text-foreground font-medium">Free runs used.</p>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        You've run the full Feel → Understand → Decide → Do chain three times.<br />
+        Upgrade to keep going — $9/month, cancel any time.
+      </p>
+      <button
+        onClick={onUpgrade}
+        data-testid="button-upgrade"
+        className="px-6 py-2.5 rounded-lg font-display font-bold text-sm uppercase tracking-wider
+          text-black transition-opacity hover:opacity-90"
+        style={{ backgroundColor: "hsl(38 85% 52%)" }}
+      >
+        Upgrade to Pro — $9/month
+      </button>
+    </div>
+  );
+}
+
+// ── Usage Bar ────────────────────────────────────────────────────────────────
+function UsageBar({ runs, limit, isPro }: { runs: number; limit: number; isPro: boolean }) {
+  if (isPro) return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="w-2 h-2 rounded-full bg-primary inline-block" />
+      Pro — unlimited runs
+    </div>
+  );
+  const remaining = Math.max(0, limit - runs);
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted-foreground" data-testid="usage-bar">
+      <span>{remaining} free run{remaining !== 1 ? "s" : ""} remaining</span>
+      <div className="flex gap-1">
+        {Array.from({ length: limit }).map((_, i) => (
+          <div key={i} className={`w-4 h-1.5 rounded-full transition-colors ${
+            i < runs ? "bg-amber-500" : "bg-muted"
+          }`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Gemini Panel ─────────────────────────────────────────────────────────────
+function GeminiPanel({ fixed, original }: { fixed: string; original: string }) {
+  const [tab, setTab] = useState<"fixed" | "original">("fixed");
+  const [copiedFixed, setCopiedFixed] = useState(false);
+  const [copiedOriginal, setCopiedOriginal] = useState(false);
+
+  const copy = async (text: string, which: "fixed" | "original") => {
+    try { await navigator.clipboard.writeText(text); } catch {}
+    if (which === "fixed") { setCopiedFixed(true); setTimeout(() => setCopiedFixed(false), 1500); }
+    else { setCopiedOriginal(true); setTimeout(() => setCopiedOriginal(false), 1500); }
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5 space-y-4" data-testid="gemini-panel">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+          Gemini Response
+        </h3>
+        <div className="flex gap-1 p-0.5 rounded-md bg-muted">
+          <button
+            onClick={() => setTab("fixed")}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+              tab === "fixed" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Fixed prompt
+          </button>
+          <button
+            onClick={() => setTab("original")}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+              tab === "original" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Original prompt
+          </button>
+        </div>
+      </div>
+
+      {tab === "fixed" && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">What Gemini returns for the <span className="text-primary">cleaned</span> prompt</p>
+            <button onClick={() => copy(fixed, "fixed")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              {copiedFixed ? <><Check className="w-3 h-3 text-primary" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+            </button>
+          </div>
+          <div className="rounded-md bg-muted/50 p-4 text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto">
+            {fixed || <span className="text-muted-foreground italic">No response</span>}
+          </div>
+        </div>
+      )}
+
+      {tab === "original" && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">What Gemini returns for the <span style={{ color: "hsl(38 85% 52%)" }}>original</span> prompt — see the difference</p>
+            <button onClick={() => copy(original, "original")} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              {copiedOriginal ? <><Check className="w-3 h-3 text-primary" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+            </button>
+          </div>
+          <div className="rounded-md bg-muted/50 p-4 text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto">
+            {original || <span className="text-muted-foreground italic">No response</span>}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground/60 italic">
+        Switch tabs to see how much the cleanup changes what you actually get back.
+      </p>
+    </div>
+  );
+}
+
 // ── Node Accordion ────────────────────────────────────────────────────────────
 function NodeOutputs({ outputs }: { outputs: CleanupResult["nodeOutputs"] }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -381,7 +502,17 @@ export default function Home() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [activeNode, setActiveNode] = useState(-1);
+  const [paywalled, setPaywalled] = useState(false);
+  const [usageInfo, setUsageInfo] = useState<{ runs: number; limit: number; isPro: boolean } | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch usage on mount
+  useEffect(() => {
+    apiRequest("GET", "/api/usage")
+      .then((r) => r.json())
+      .then((d) => setUsageInfo(d))
+      .catch(() => {});
+  }, []);
 
   // ── Step 1: fetch questions ─────────────────────────────────────────────────
   const questionsMutation = useMutation({
@@ -441,15 +572,32 @@ export default function Home() {
       setActiveNode(4);
       setResult(data);
       setStage("done");
+      if (data.usage) setUsageInfo(data.usage);
       queryClient.invalidateQueries({ queryKey: ["/api/history"] });
     },
-    onError: (err: Error) => {
+    onError: (err: Error & { status?: number }) => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       setActiveNode(-1);
-      setStage("questions");
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      // 402 = free limit reached
+      if (err.message?.includes("402") || err.message?.includes("free_limit")) {
+        setPaywalled(true);
+        setStage("input");
+      } else {
+        setStage("questions");
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     },
   });
+
+  const handleUpgrade = async () => {
+    try {
+      const res = await apiRequest("POST", "/api/create-checkout-session", {});
+      const { url } = await res.json();
+      if (url) window.location.href = url;
+    } catch (err: any) {
+      toast({ title: "Stripe error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleRunNodes = () => {
     if (!prompt.trim()) return;
@@ -479,6 +627,7 @@ export default function Home() {
     setQuestions([]);
     setAnswers({});
     setActiveNode(-1);
+    setPaywalled(false);
   };
 
   const answeredCount = Object.keys(answers).filter((k) => answers[k]?.trim()).length;
@@ -492,14 +641,19 @@ export default function Home() {
           <button onClick={handleReset} className="focus:outline-none" aria-label="Reset">
             <Logo />
           </button>
-          <button
-            onClick={toggle}
-            data-testid="theme-toggle"
-            className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
-            aria-label="Toggle theme"
-          >
-            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          <div className="flex items-center gap-4">
+            {usageInfo && (
+              <UsageBar runs={usageInfo.runs} limit={usageInfo.limit} isPro={usageInfo.isPro} />
+            )}
+            <button
+              onClick={toggle}
+              data-testid="theme-toggle"
+              className="p-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+              aria-label="Toggle theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -604,10 +758,23 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── Paywall gate ── */}
+        {paywalled && (
+          <div className="mt-4">
+            <PaywallGate onUpgrade={handleUpgrade} />
+          </div>
+        )}
+
         {/* ── Stage: Done — Results ── */}
         {stage === "done" && result && (
           <div className="space-y-4 mt-2" data-testid="results-section">
             <FixedPromptBlock prompt={result.fixedPrompt} />
+            {result.gemini && (
+              <GeminiPanel
+                fixed={result.gemini.fixedPromptOutput}
+                original={result.gemini.originalPromptOutput}
+              />
+            )}
             <SignalScore score={result.score} />
             <ChangeLog items={result.changeLog} comment={result.deltaComment} />
             <NodeOutputs outputs={result.nodeOutputs} />
