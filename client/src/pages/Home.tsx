@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, API_BASE } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Sun, Moon, ChevronRight, Zap, ArrowRight, LogOut, ImageIcon, Video, X, User, Download } from "lucide-react";
 import type { Cleanup, WeightedAnswer } from "@shared/schema";
@@ -516,8 +516,8 @@ export default function Home() {
         if (media.imageFile) fd.append("image", media.imageFile);
         if (media.videoUrl) fd.append("videoUrl", media.videoUrl);
         const res = await fetch(
-          (window as any).__API_BASE__ ? `${(window as any).__API_BASE__}/api/questions` : "/api/questions",
-          { method: "POST", body: fd }
+          `${API_BASE}/api/questions`,
+          { method: "POST", body: fd, credentials: "include" }
         );
         return (await res.json()) as { questions: Question[] };
       }
@@ -598,8 +598,7 @@ export default function Home() {
       if (media.imageFile) fd.append("image", media.imageFile);
       if (media.videoUrl) fd.append("videoUrl", media.videoUrl);
       if (generateImage) fd.append("generateImage", "true");
-      const apiBase = (window as any).__API_BASE__ || "";
-      const res = await fetch(`${apiBase}/api/cleanup`, { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/cleanup`, { method: "POST", body: fd, credentials: "include" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: res.statusText }));
         const e: any = new Error(err.message || "Cleanup failed");

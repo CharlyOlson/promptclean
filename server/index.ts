@@ -37,31 +37,19 @@ const httpServer = createServer(app);
 // cookie.secure works properly in production.
 app.set("trust proxy", 1);
 
-// CORS — restrict to the configured allowed origin (or same-origin in production).
-// When credentials are used, Allow-Origin must be a specific origin, not "*".
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "";
-
+// CORS — allow any origin with credentials so the Perplexity-hosted
+// frontend (or any future host) can reach this Railway backend.
+// Access-Control-Allow-Origin must echo the request origin (not "*")
+// whenever credentials are included.
 app.use((req, res, next) => {
-  const origin = req.headers.origin ?? "";
-  const isDev = process.env.NODE_ENV !== "production";
-
-  // Allow the request if:
-  //  • an explicit ALLOWED_ORIGIN is configured and matches, OR
-  //  • we're in development (any localhost/127 origin is fine)
-  const isAllowed =
-    (ALLOWED_ORIGIN && origin === ALLOWED_ORIGIN) ||
-    (isDev && (origin === "" || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)));
-
-  if (isAllowed || origin === "") {
-    // Echo the request origin back — required when credentials are involved
-    if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.append("Vary", "Origin");
-    }
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
   }
+  res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
@@ -94,10 +82,9 @@ if (process.env.NODE_ENV === "production") {
   );
 }
 
-// Use sameSite:"none" (requires secure) when ALLOWED_ORIGIN points to a
-// different domain so the session cookie is sent on cross-site fetch requests.
-// Fall back to "lax" for same-origin setups (no ALLOWED_ORIGIN configured).
-const isCrossOrigin = Boolean(ALLOWED_ORIGIN);
+// Session cookie must be sameSite:"none" + secure:true in production so it
+// is sent on cross-origin requests from the Perplexity-hosted frontend.
+const isProd = process.env.NODE_ENV === "production";
 
 app.use(
   session({
@@ -106,9 +93,9 @@ app.use(
     saveUninitialized: false,
     proxy: true,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: isProd,
       httpOnly: true,
-      sameSite: isCrossOrigin ? "none" : "lax",
+      sameSite: isProd ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
     store: new SessionStore({ checkPeriod: 86_400_000 }),

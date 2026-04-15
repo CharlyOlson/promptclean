@@ -1,6 +1,9 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+// In development, API calls are same-origin (Vite proxies them).
+// In production (deployed to Perplexity CDN), calls must go to the
+// Railway backend explicitly.
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "https://promptclean-production.up.railway.app";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {

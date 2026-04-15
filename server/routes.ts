@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import Stripe from "stripe";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import multer from "multer";
-import fs from "fs";
 
 // ── Clients ────────────────────────────────────────────────────────────────────
 const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
@@ -27,6 +26,16 @@ const upload = multer({
     else cb(new Error("Only image files are accepted"));
   },
 });
+
+// Middleware that applies multer only when the request is multipart/form-data,
+// otherwise passes through so express.json() body is preserved.
+function optionalUpload(req: Request, res: Response, next: NextFunction) {
+  const ct = req.headers["content-type"] ?? "";
+  if (ct.includes("multipart/form-data")) {
+    return upload.single("image")(req, res, next);
+  }
+  next();
+}
 
 // ── Session usage tracking ─────────────────────────────────────────────────────
 const usageMap = new Map<string, { runs: number; isPro: boolean }>();
@@ -249,7 +258,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── Step 1: Questions (supports image upload) ───────────────────────────────
-  app.post("/api/questions", upload.single("image"), async (req, res) => {
+  app.post("/api/questions", optionalUpload, async (req, res) => {
     try {
       const prompt = req.body?.prompt;
       const videoUrl = req.body?.videoUrl;
@@ -298,7 +307,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── Step 2: Full cleanup + Gemini comparison + image generation ─────────────
-  app.post("/api/cleanup", upload.single("image"), async (req, res) => {
+  app.post("/api/cleanup", optionalUpload, async (req, res) => {
     try {
       const sid = getSession(req, res);
       const usage = usageMap.get(sid)!;
