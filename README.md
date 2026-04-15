@@ -20,7 +20,7 @@ Sin — in the philosophical sense from the source doc — lives in stages 2 and
 - **Frontend**: React + Vite + Tailwind + shadcn/ui
 - **Backend**: Express + Node.js
 - **Database**: SQLite via Drizzle ORM
-- **AI**: OpenAI gpt-4o-mini
+- **AI**: Google Gemini 2.5 Flash
 
 ## Setup
 
@@ -28,9 +28,10 @@ Sin — in the philosophical sense from the source doc — lives in stages 2 and
 npm install
 ```
 
-Create a `.env` file:
-```
-OPENAI_API_KEY=your_key_here
+Copy the example env file and add your key:
+```bash
+cp .env.example .env
+# then open .env and replace sk-... with your real key
 ```
 
 Run dev:
@@ -47,15 +48,32 @@ npm run build
 
 1. Push this repo to GitHub
 2. Connect to [railway.app](https://railway.app)
-3. Add `OPENAI_API_KEY` as an environment variable
+3. Add `GEMINI_API_KEY` as an environment variable
 4. Deploy — Railway auto-detects Node.js
+
+> **Note on routing:** The client uses hash-based routing (`/#/path`) via wouter's `useHashLocation`. This is intentional — Railway doesn't guarantee a server-side SPA fallback for deep links, so browser routing would cause 404s on refresh or direct navigation.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | Your OpenAI API key |
+| `GEMINI_API_KEY` | Yes | Your Google Gemini API key |
 | `NODE_ENV` | No | Set to `production` for prod builds |
+
+## Rotating your API key
+
+If your key was exposed or you need to replace it:
+
+**Locally**
+1. Open (or create) `.env` in the project root — it is gitignored, so safe to edit.
+2. Replace the value of `GEMINI_API_KEY` with a new key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+3. Restart `npm run dev` — the server picks up the new value on boot.
+
+**Railway (production)**
+1. Open your project in the [Railway dashboard](https://railway.app).
+2. Go to **Variables** (left sidebar).
+3. Find `GEMINI_API_KEY`, click the pencil icon, paste the new key, and save.
+4. Railway will trigger a redeploy automatically.
 
 ---
 
