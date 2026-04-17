@@ -108,7 +108,6 @@ function regenerateSession(
   userId: string,
   username: string,
 ): Promise<void> {
-  // Capture metering/subscription fields before regeneration destroys them
   const prev = {
     runs: req.session.runs,
     firstRunAt: req.session.firstRunAt,
@@ -119,14 +118,19 @@ function regenerateSession(
   return new Promise((resolve, reject) => {
     req.session.regenerate((err) => {
       if (err) return reject(err);
-      // Restore preserved fields
       req.session.userId = userId;
       req.session.authUsername = username;
       if (prev.runs !== undefined) req.session.runs = prev.runs;
       if (prev.firstRunAt !== undefined) req.session.firstRunAt = prev.firstRunAt;
       if (prev.isPro !== undefined) req.session.isPro = prev.isPro;
       if (prev.checkoutToken !== undefined) req.session.checkoutToken = prev.checkoutToken;
-      resolve();
+      // Explicitly save to store before responding — without this,
+      // the session may not be committed before the next request arrives,
+      // causing /api/auth/me to return 401 immediately after login.
+      req.session.save((saveErr) => {
+        if (saveErr) return reject(saveErr);
+        resolve();
+      });
     });
   });
 }
