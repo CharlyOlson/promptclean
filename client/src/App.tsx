@@ -35,29 +35,9 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/**
- * Guards the root route: first-time authenticated visitors go to /welcome.
- * After Welcome sets PC_SEEN_WELCOME_KEY in localStorage, / renders Home directly.
- */
+// Direct render — no localStorage-based redirect (localStorage is blocked
+// in sandboxed iframes). Welcome is accessible via nav link if needed.
 function FirstVisitGuard() {
-  const [location, navigate] = useLocation();
-
-  let shouldRedirectToWelcome = false;
-  try {
-    shouldRedirectToWelcome =
-      location === "/" && !localStorage.getItem(PC_SEEN_WELCOME_KEY);
-  } catch {
-    shouldRedirectToWelcome = false;
-  }
-
-  useEffect(() => {
-    if (shouldRedirectToWelcome) {
-      navigate("/welcome", { replace: true });
-    }
-  }, [shouldRedirectToWelcome, navigate]);
-
-  if (shouldRedirectToWelcome) return null;
-
   return <Home />;
 }
 

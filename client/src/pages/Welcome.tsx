@@ -63,11 +63,6 @@ export default function Welcome() {
   const [, navigate] = useLocation();
 
   function dismiss() {
-    try {
-      localStorage.setItem(PC_SEEN_WELCOME_KEY, "1");
-    } catch {
-      // ignore storage errors
-    }
     navigate("/", { replace: true });
   }
 

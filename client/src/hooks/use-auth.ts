@@ -19,8 +19,10 @@ export function useAuth() {
       const res = await apiRequest("POST", "/api/auth/login", creds);
       return (await res.json()) as AuthUser;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: (user) => {
+      // Set the user directly — avoids a race condition where invalidateQueries
+      // fires a GET /api/auth/me before the browser has processed Set-Cookie.
+      queryClient.setQueryData(["/api/auth/me"], user);
     },
   });
 
@@ -29,8 +31,8 @@ export function useAuth() {
       const res = await apiRequest("POST", "/api/auth/register", creds);
       return (await res.json()) as AuthUser;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    onSuccess: (user) => {
+      queryClient.setQueryData(["/api/auth/me"], user);
     },
   });
 

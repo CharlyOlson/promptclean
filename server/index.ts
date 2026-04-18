@@ -87,8 +87,8 @@ const isProd = process.env.NODE_ENV === "production";
 app.use(
   session({
     secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
+    resave: true,
+    saveUninitialized: true,
     proxy: true,
     cookie: {
       secure: isProd,
