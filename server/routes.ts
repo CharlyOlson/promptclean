@@ -38,21 +38,31 @@ function optionalUpload(req: Request, res: Response, next: NextFunction) {
 }
 
 // ── Session usage tracking ─────────────────────────────────────────────────────
-const usageMap = new Map<string, { runs: number; isPro: boolean }>();
+// All state lives in express-session. No separate cookie. No usageMap.
+// cookie-parser must NOT be registered alongside express-session.
 
-function getSession(req: Request, res: Response): string {
-  let sid = (req as any).cookies?.promptclean_sid as string | undefined;
-  if (!sid) {
-    sid = crypto.randomUUID();
-    res.cookie("promptclean_sid", sid, {
-      httpOnly: true,
-      maxAge: 60 * 60 * 24 * 30 * 1000,
-      sameSite: "none",
-      secure: true,
-    });
-  }
-  if (!usageMap.has(sid)) usageMap.set(sid, { runs: 0, isPro: false });
-  return sid;
+// Webhook-granted pro sessions (persists in memory, survives restarts via session store)
+const proSessions = new Set<string>();
+
+function getSession(req: Request, _res: Response): string {
+  return (req.session as any).userId ?? req.sessionID;
+}
+
+function getUsage(req: Request): { runs: number; isPro: boolean } {
+  return {
+    runs: (req.session as any).runs ?? 0,
+    isPro: (req.session as any).isPro ?? false,
+  };
+}
+
+function setRuns(req: Request, n: number): void {
+  (req.session as any).runs = n;
+  req.session.save(() => {});
+}
+
+function setIsPro(req: Request, val: boolean): void {
+  (req.session as any).isPro = val;
+  req.session.save(() => {});
 }
 
 // ── Gemini helpers ─────────────────────────────────────────────────────────────
@@ -278,7 +288,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ── Usage ──────────────────────────────────────────────────────────────────
   app.get("/api/usage", (req, res) => {
     const sid = getSession(req, res);
-    const u = usageMap.get(sid)!;
+    const u = getUsage(req);
     res.json({ runs: u.runs, limit: FREE_RUN_LIMIT, isPro: u.isPro });
   });
 
@@ -328,10 +338,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
       const sid = session.metadata?.promptclean_sid;
-      if (sid) {
-        const ex = usageMap.get(sid) ?? { runs: 0, isPro: false };
-        usageMap.set(sid, { ...ex, isPro: true });
-      }
+      if (sid) proSessions.add(sid);
     }
     res.json({ received: true });
   });
@@ -389,7 +396,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/cleanup", optionalUpload, async (req, res) => {
     try {
       const sid = getSession(req, res);
-      const usage = usageMap.get(sid)!;
+      const usage = getUsage(req);
+      // Also check webhook-granted pro status
+      if (proSessions.has(sid)) setIsPro(req, true);
 
       if (!usage.isPro && usage.runs >= FREE_RUN_LIMIT) {
         return res.status(402).json({
@@ -410,7 +419,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.status(503).json({ message: "GEMINI_API_KEY not configured" });
 
       // Increment usage
-      if (!usage.isPro) usageMap.set(sid, { ...usage, runs: usage.runs + 1 });
+      if (!usage.isPro) setRuns(req, usage.runs + 1);
 
       let imageBase64: string | undefined;
       let imageMime: string | undefined;
@@ -601,7 +610,7 @@ ${INTENT_SUMMARY}
         console.error("Baseline refresh failed:", e.message)
       );
 
-      const currentUsage = usageMap.get(sid)!;
+      const currentUsage = getUsage(req);
 
       return res.json({
         // A — cleaned prompt + Gemini executing it

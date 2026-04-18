@@ -1,5 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import cookieParser from "cookie-parser";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { randomBytes } from "crypto";
@@ -69,7 +68,6 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
 
 const SessionStore = MemoryStore(session);
 
